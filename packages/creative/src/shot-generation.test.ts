@@ -27,6 +27,7 @@ function asset(input: Pick<AssetRecord, 'assetId' | 'shotId' | 'type' | 'version
 const assets = [
   asset({ assetId: 'asset_previous_tail', shotId: 'shot_previous', type: 'image', version: 1, uri: 's3://onecrew/previous-tail.png' }),
   asset({ assetId: 'asset_character', type: 'character', version: 1, uri: 's3://onecrew/character.png' }),
+  asset({ assetId: 'asset_character_extra', type: 'image', version: 1, uri: 's3://onecrew/character-extra.png' }),
   asset({ assetId: 'asset_shot_reference', type: 'image', version: 1, uri: 's3://onecrew/reference.png' }),
   asset({ assetId: 'asset_image_v1', shotId: 'shot_current', type: 'image', version: 1, uri: 's3://onecrew/current-v1.png' }),
   asset({ assetId: 'asset_image_v2', shotId: 'shot_current', type: 'image', version: 2, uri: 's3://onecrew/current-v2.png' }),
@@ -68,7 +69,7 @@ const bundle = creativeProjectBundleSchema.parse({
       kind: 'character',
       name: '林遥',
       referenceAssetIds: ['asset_character'],
-      extraAssetIds: [],
+      extraAssetIds: ['asset_character_extra'],
       sortOrder: 0,
       status: 'ready',
     },
@@ -152,10 +153,14 @@ describe('creative shot generation request builder', () => {
         's3://onecrew/current-v1.png',
         's3://onecrew/reference.png',
         's3://onecrew/character.png',
+        's3://onecrew/character-extra.png',
       ],
     });
     expect('prompt' in request && request.prompt).toContain('image prompt');
     expect('prompt' in request && request.prompt).toContain('银蓝边缘光');
+    expect('prompt' in request && request.prompt).toContain('@图片1：上一镜尾帧');
+    expect('prompt' in request && request.prompt).toContain('@图片4：角色「林遥」主参考 1');
+    expect('prompt' in request && request.prompt).toContain('@图片5：角色「林遥」补充参考 1');
   });
 
   it('uses the newest image version over an older bound first frame, plus the explicit tail frame', () => {

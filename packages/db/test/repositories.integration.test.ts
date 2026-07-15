@@ -1,5 +1,10 @@
 import { loadEnv } from '@onecrew/config';
-import { creativeGenerationBatchSchema, creativeProjectBundleSchema, projectSpecSchema } from '@onecrew/contracts';
+import {
+  assetRecordSchema,
+  creativeGenerationBatchSchema,
+  creativeProjectBundleSchema,
+  projectSpecSchema,
+} from '@onecrew/contracts';
 import { createInputHash, InvalidStateTransitionError, VersionConflictError } from '@onecrew/domain';
 import { eq } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -22,6 +27,59 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL repositories', () => {
+  it('atomically registers reference-grid tiles and replaces the composite entity binding', async () => {
+    const projectId = `prj_reference_grid_${suffix}`;
+    const entityId = `character_reference_grid_${suffix}`;
+    const sourceAssetId = `asset_reference_grid_source_${suffix}`;
+    await repositories.creative.importBundle(creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0', source: { system: 'onecrew' },
+      project: {
+        projectId, nameZh: '参考图网格测试', nameEn: 'Reference Grid Test', synopsis: '拆分组合参考图。',
+        audience: '开发测试', genres: ['test'], ownerOpenId: 'ou_grid_owner', locales: ['zh-CN'],
+        aspectRatios: ['16:9'], budgetLimitCny: 1, status: 'draft',
+      },
+      episodes: [{
+        episodeId: `episode_reference_grid_${suffix}`, projectId, episodeNumber: 1, title: '参考图测试',
+        scriptContent: '', durationSec: 1, characterIds: [entityId], sceneIds: [], propIds: [], status: 'draft',
+      }],
+      entities: [{
+        entityId, projectId, kind: 'character', name: '云岚', referenceAssetIds: [sourceAssetId], extraAssetIds: [],
+        identityAnchors: [], styleTokens: [], colorPalette: [], stages: [], sortOrder: 0, status: 'draft',
+      }],
+      shots: [], framePrompts: [], mediaFiles: [],
+    }));
+    const createdAt = new Date().toISOString();
+    const source = assetRecordSchema.parse({
+      assetId: sourceAssetId, projectId, type: 'image', version: 1, uri: `s3://onecrew/grid/${sourceAssetId}.png`,
+      provider: 'import', model: 'source', source: 'grid fixture', license: 'fixture', contentHash: '6'.repeat(64),
+      status: 'draft', createdAt, updatedAt: createdAt,
+    });
+    await repositories.assets.create(source);
+    const tiles = Array.from({ length: 4 }, (_, index) => assetRecordSchema.parse({
+      assetId: `asset_reference_grid_tile_${index}_${suffix}`, projectId, type: 'image', version: 1,
+      parentAssetId: sourceAssetId, uri: `s3://onecrew/grid/${sourceAssetId}/tile-${index}.png`,
+      provider: 'onecrew-media', model: 'ffmpeg-grid-v1', source: `tile ${index}`, license: 'fixture',
+      creativeRole: `reference-grid-r${Math.floor(index / 2) + 1}-c${index % 2 + 1}`,
+      contentHash: String(index + 1).repeat(64), status: 'draft', createdAt, updatedAt: createdAt,
+    }));
+    const input = {
+      entityId, sourceAssetId, expectedEntityVersion: 1, rows: 2, columns: 2, actorOpenId: 'ou_grid_editor',
+      idempotencyKey: `reference_grid_${suffix}`, tiles,
+    };
+    await expect(repositories.creative.applyReferenceGrid(input)).resolves.toMatchObject({
+      entityId, sourceAssetId, entityVersion: 2, replayed: false,
+      tileAssetIds: tiles.map((tile) => tile.assetId),
+    });
+    const restored = await repositories.creative.getBundle(projectId);
+    expect(restored.entities[0]?.referenceAssetIds).toEqual(tiles.map((tile) => tile.assetId));
+    await expect(repositories.creative.applyReferenceGrid(input)).resolves.toMatchObject({
+      entityVersion: 2, replayed: true,
+    });
+    await expect(repositories.creative.applyReferenceGrid({
+      ...input, idempotencyKey: `reference_grid_stale_${suffix}`,
+    })).rejects.toBeInstanceOf(VersionConflictError);
+  });
+
   it('atomically appends a generated story plan, bumps the project version, and replays by Job', async () => {
     const projectId = `prj_story_append_${suffix}`;
     const bundle = creativeProjectBundleSchema.parse({

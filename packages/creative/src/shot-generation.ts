@@ -32,17 +32,23 @@ function dimensions(aspectRatio: CreativeProjectBundle['project']['aspectRatios'
   return { width: 1_024, height: 576 };
 }
 
-function promptWithContinuity(basePrompt: string, shot: ShotSpec): string {
-  if (!shot.continuity) return basePrompt;
+const MAX_PROMPT_LENGTH = 20_000;
+
+function continuitySection(shot: ShotSpec): string {
+  if (!shot.continuity) return '';
   const continuity = JSON.stringify({
     characters: shot.continuity.characters,
     ...(shot.continuity.lighting ? { lighting: shot.continuity.lighting } : {}),
     ...(shot.continuity.cameraAxis ? { cameraAxis: shot.continuity.cameraAxis } : {}),
     ...(shot.continuity.notes ? { notes: shot.continuity.notes } : {}),
   });
-  const separator = '\n\nContinuity constraints: ';
-  if (basePrompt.length + separator.length >= 20_000) return basePrompt.slice(0, 20_000);
-  return `${basePrompt}${separator}${continuity.slice(0, 20_000 - basePrompt.length - separator.length)}`;
+  return `\n\nContinuity constraints: ${continuity}`;
+}
+
+function promptWithSections(basePrompt: string, sections: string[]): string {
+  const suffix = sections.join('');
+  if (suffix.length >= MAX_PROMPT_LENGTH) return suffix.slice(0, MAX_PROMPT_LENGTH);
+  return `${basePrompt.slice(0, MAX_PROMPT_LENGTH - suffix.length)}${suffix}`;
 }
 
 function latestShotImage(
@@ -61,30 +67,79 @@ function latestShotImage(
     .sort((left, right) => right.version - left.version)[0];
 }
 
-function referenceAssetIds(bundle: CreativeProjectBundle, shot: ShotSpec): string[] {
+interface CreativeReferenceCandidate {
+  assetId: string;
+  label: string;
+}
+
+interface CreativeResolvedReference extends CreativeReferenceCandidate {
+  uri: string;
+}
+
+const entityKindLabels = {
+  character: '角色',
+  scene: '场景',
+  prop: '道具',
+} as const;
+
+function referenceCandidates(bundle: CreativeProjectBundle, shot: ShotSpec): CreativeReferenceCandidate[] {
   const previousShot = bundle.shots
     .filter((candidate) => candidate.episodeId === shot.episodeId && candidate.sequence < shot.sequence)
     .sort((left, right) => right.sequence - left.sequence)[0];
-  const entityIds = new Set([shot.sceneId, ...shot.characters, ...(shot.propIds ?? [])]);
-  const entityReferences = bundle.entities
-    .filter((entity) => entityIds.has(entity.entityId))
-    .flatMap((entity) => entity.referenceAssetIds);
-  return [
-    ...(previousShot?.lastFrameAssetId ? [previousShot.lastFrameAssetId] : []),
-    ...(shot.firstFrameAssetId ? [shot.firstFrameAssetId] : []),
-    ...shot.referenceAssetIds,
-    ...entityReferences,
+  const candidates: CreativeReferenceCandidate[] = [
+    ...(previousShot?.lastFrameAssetId
+      ? [{ assetId: previousShot.lastFrameAssetId, label: '上一镜尾帧' }]
+      : []),
+    ...(shot.firstFrameAssetId
+      ? [{ assetId: shot.firstFrameAssetId, label: '本镜首帧' }]
+      : []),
+    ...shot.referenceAssetIds.map((assetId, index) => ({
+      assetId,
+      label: `分镜参考 ${index + 1}`,
+    })),
   ];
+  const entitiesById = new Map(bundle.entities.map((entity) => [entity.entityId, entity] as const));
+  const orderedEntityIds = [...shot.characters, shot.sceneId, ...(shot.propIds ?? [])];
+  for (const entityId of orderedEntityIds) {
+    const entity = entitiesById.get(entityId);
+    if (!entity) continue;
+    const kindLabel = entityKindLabels[entity.kind];
+    candidates.push(
+      ...entity.referenceAssetIds.map((assetId, index) => ({
+        assetId,
+        label: `${kindLabel}「${entity.name}」主参考 ${index + 1}`,
+      })),
+      ...entity.extraAssetIds.map((assetId, index) => ({
+        assetId,
+        label: `${kindLabel}「${entity.name}」补充参考 ${index + 1}`,
+      })),
+    );
+  }
+  return candidates;
 }
 
-function assetUris(assets: AssetRecord[], projectId: string, assetIds: string[]): string[] {
+function resolveReferences(
+  assets: AssetRecord[],
+  projectId: string,
+  candidates: CreativeReferenceCandidate[],
+): CreativeResolvedReference[] {
   const byId = new Map(
     assets.filter((asset) => asset.projectId === projectId).map((asset) => [asset.assetId, asset] as const),
   );
-  return [...new Set(assetIds)].flatMap((assetId) => {
-    const asset = byId.get(assetId);
-    return asset ? [asset.uri] : [];
-  });
+  const seen = new Set<string>();
+  return candidates.flatMap((candidate) => {
+    if (seen.has(candidate.assetId)) return [];
+    seen.add(candidate.assetId);
+    const asset = byId.get(candidate.assetId);
+    return asset ? [{ ...candidate, uri: asset.uri }] : [];
+  }).slice(0, 10);
+}
+
+function referenceMapSection(references: CreativeResolvedReference[]): string {
+  if (references.length === 0) return '';
+  return `\n\nReference image map (keep exact order):\n${references
+    .map((reference, index) => `@图片${index + 1}：${reference.label}`)
+    .join('\n')}`;
 }
 
 export function buildCreativeShotGenerationRequest(
@@ -100,15 +155,23 @@ export function buildCreativeShotGenerationRequest(
 
   if (input.kind === 'image') {
     const size = dimensions(aspectRatio);
+    const references = resolveReferences(
+      input.assets,
+      project.projectId,
+      referenceCandidates(input.bundle, shot),
+    );
     return imageProviderRequestSchema.parse({
       capability: 'image',
       projectId: project.projectId,
       route,
       generationNonce: input.generationNonce,
       shotId: shot.shotId,
-      prompt: promptWithContinuity(shot.polishedPrompt ?? shot.imagePrompt ?? shot.prompt, shot),
+      prompt: promptWithSections(shot.polishedPrompt ?? shot.imagePrompt ?? shot.prompt, [
+        continuitySection(shot),
+        referenceMapSection(references),
+      ]),
       ...(shot.negativePrompt ? { negativePrompt: shot.negativePrompt } : {}),
-      referenceUris: assetUris(input.assets, project.projectId, referenceAssetIds(input.bundle, shot)).slice(0, 10),
+      referenceUris: references.map((reference) => reference.uri),
       ...size,
       count: 1,
     });
@@ -123,7 +186,7 @@ export function buildCreativeShotGenerationRequest(
     route,
     generationNonce: input.generationNonce,
     shotId: shot.shotId,
-    prompt: promptWithContinuity(shot.videoPrompt ?? shot.polishedPrompt ?? shot.prompt, shot),
+    prompt: promptWithSections(shot.videoPrompt ?? shot.polishedPrompt ?? shot.prompt, [continuitySection(shot)]),
     ...(latestImage ?? firstFrame ? { referenceImageUri: (latestImage ?? firstFrame)!.uri } : {}),
     ...(lastFrame ? { lastFrameUri: lastFrame.uri } : {}),
     durationSec: Math.min(30, Math.max(1, Math.round(shot.durationSec))),

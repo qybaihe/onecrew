@@ -1035,6 +1035,30 @@ export const creativeGenerationBatchSchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
+export const creativeReferenceGridRequestSchema = z.object({
+  sourceAssetId: idSchema,
+  expectedEntityVersion: z.number().int().positive(),
+  rows: z.number().int().min(1).max(3).default(2),
+  columns: z.number().int().min(1).max(3).default(2),
+  actorOpenId: idSchema,
+}).superRefine((value, context) => {
+  const count = value.rows * value.columns;
+  if (count < 2 || count > 9) {
+    context.addIssue({ code: 'custom', path: ['rows'], message: 'grid must contain between 2 and 9 tiles' });
+  }
+});
+
+export const creativeReferenceGridResultSchema = z.object({
+  projectId: idSchema,
+  entityId: idSchema,
+  sourceAssetId: idSchema,
+  rows: z.number().int().min(1).max(3),
+  columns: z.number().int().min(1).max(3),
+  tileAssetIds: z.array(idSchema).min(2).max(9),
+  entityVersion: z.number().int().positive(),
+  replayed: z.boolean(),
+});
+
 export const creativeStoryPlanRequestSchema = z.object({
   brief: z.string().min(1).max(20_000),
   episodeCount: z.number().int().min(1).max(12).default(3),
@@ -1135,6 +1159,8 @@ export const contractSchemas = {
   AsyncJobAccepted: asyncJobAcceptedSchema,
   CreativeGenerationBatchRequest: creativeGenerationBatchRequestSchema,
   CreativeGenerationBatch: creativeGenerationBatchSchema,
+  CreativeReferenceGridRequest: creativeReferenceGridRequestSchema,
+  CreativeReferenceGridResult: creativeReferenceGridResultSchema,
   CreativeStoryPlanRequest: creativeStoryPlanRequestSchema,
   CreativeStoryPlan: creativeStoryPlanSchema,
   CreativeStoryPlanApplyResult: creativeStoryPlanApplyResultSchema,
@@ -1193,6 +1219,8 @@ export type CreativeGenerationBatchStatus = z.infer<typeof creativeGenerationBat
 export type CreativeGenerationBatchRequest = z.infer<typeof creativeGenerationBatchRequestSchema>;
 export type CreativeGenerationBatchItem = z.infer<typeof creativeGenerationBatchItemSchema>;
 export type CreativeGenerationBatch = z.infer<typeof creativeGenerationBatchSchema>;
+export type CreativeReferenceGridRequest = z.infer<typeof creativeReferenceGridRequestSchema>;
+export type CreativeReferenceGridResult = z.infer<typeof creativeReferenceGridResultSchema>;
 export type CreativeStoryPlanRequest = z.infer<typeof creativeStoryPlanRequestSchema>;
 export type CreativeStoryPlan = z.infer<typeof creativeStoryPlanSchema>;
 export type CreativeStoryPlanApplyResult = z.infer<typeof creativeStoryPlanApplyResultSchema>;

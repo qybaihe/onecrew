@@ -1,6 +1,7 @@
 import {
   assetRecordSchema,
   type CreativeProjectBundle,
+  type CreativeReferenceGridRequest,
   type CreativeStoryPlanRequest,
   type ProviderRequest,
   type QcRunRequest,
@@ -179,6 +180,7 @@ describe('creative routes', () => {
     let generationRequest: ProviderRequest | undefined;
     let continuityQcRequest: QcRunRequest | undefined;
     let storyPlanRequest: CreativeStoryPlanRequest | undefined;
+    let referenceGridRequest: CreativeReferenceGridRequest | undefined;
     const storyPlan = creativeStoryPlanSchema.parse({
       title: '星门续章', logline: '导航员抵达星门。',
       episodes: [{
@@ -393,6 +395,24 @@ describe('creative routes', () => {
             };
           },
         },
+        referenceGrid: {
+          async process(id, request, idempotencyKey) {
+            if (id !== entityId || idempotencyKey !== 'creative_reference_grid_1') {
+              throw new Error('wrong reference grid request');
+            }
+            referenceGridRequest = request;
+            return {
+              projectId,
+              entityId,
+              sourceAssetId: qcAsset.assetId,
+              rows: request.rows,
+              columns: request.columns,
+              tileAssetIds: ['asset_grid_1', 'asset_grid_2', 'asset_grid_3', 'asset_grid_4'],
+              entityVersion: 3,
+              replayed: false,
+            };
+          },
+        },
       },
     });
 
@@ -424,6 +444,43 @@ describe('creative routes', () => {
     });
     expect(entityResponse.statusCode).toBe(200);
     expect(entityResponse.json()).toMatchObject({ record: { name: '远古星门', location: '星海边界' }, version: 2 });
+
+    const missingReferenceGridKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/entities/${entityId}/reference-grids`,
+      payload: {
+        sourceAssetId: qcAsset.assetId,
+        expectedEntityVersion: 2,
+        rows: 2,
+        columns: 2,
+        actorOpenId: 'ou_studio',
+      },
+    });
+    expect(missingReferenceGridKey.statusCode).toBe(400);
+
+    const referenceGrid = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/entities/${entityId}/reference-grids`,
+      headers: { 'idempotency-key': 'creative_reference_grid_1' },
+      payload: {
+        sourceAssetId: qcAsset.assetId,
+        expectedEntityVersion: 2,
+        rows: 2,
+        columns: 2,
+        actorOpenId: 'ou_studio',
+      },
+    });
+    expect(referenceGrid.statusCode).toBe(200);
+    expect(referenceGrid.json()).toMatchObject({
+      ok: true,
+      result: { entityId, sourceAssetId: qcAsset.assetId, tileAssetIds: expect.any(Array), entityVersion: 3 },
+    });
+    expect(referenceGridRequest).toMatchObject({
+      sourceAssetId: qcAsset.assetId,
+      expectedEntityVersion: 2,
+      rows: 2,
+      columns: 2,
+    });
 
     const missingStoryPlanKey = await app.inject({
       method: 'POST',

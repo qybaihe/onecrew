@@ -26,6 +26,7 @@ POST /v1/creative/imports/local-mini-drama/zip
 POST /v1/creative/imports/onecrew/zip
 PATCH /v1/creative/episodes/:episodeId
 PATCH /v1/creative/entities/:entityId
+POST  /v1/creative/entities/:entityId/reference-grids
 PATCH /v1/creative/shots/:shotId
 POST  /v1/creative/shots/:shotId/generations
 POST  /v1/creative/projects/:projectId/generation-batches
@@ -177,6 +178,26 @@ curl --request PATCH \
 
 成功响应返回新记录和增加后的 `version`，并在同一数据库事务写入审计日志。过期版本返回 HTTP 409 和当前实际版本信息。
 
+### 拆分组合参考图
+
+源图必须属于当前实体的项目、已写入受控 S3/MinIO，并且是图片类资产。网格支持 1×2 至 3×3，总切片数为 2～9：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/entities/character_demo_01/reference-grids \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: character-demo-grid-1' \
+  --data '{
+    "sourceAssetId": "asset_character_four_view",
+    "expectedEntityVersion": 1,
+    "rows": 2,
+    "columns": 2,
+    "actorOpenId": "ou_local_studio"
+  }'
+```
+
+服务使用本机 FFmpeg 一次解码并按行优先顺序裁切，每张 PNG 都会生成内容哈希、`parentAssetId`、`reference-grid-rX-cY` 角色标记和受控 URI。资产登记、实体参考替换、版本递增与审计在同一 PostgreSQL 事务中完成。同一幂等键与相同输入会回放原结果；过期实体版本返回 409。
+
 ### 从已保存分镜生成图片或视频
 
 该端点使用数据库中的当前分镜，不接受客户端私自传入的提示词。请先保存分镜，再提交生成：
@@ -194,7 +215,7 @@ curl --request POST \
   }'
 ```
 
-`kind` 支持 `image` 和 `video`。图片请求会按顺序收集上一镜尾帧、本镜首帧、分镜参考和角色/场景/道具参考，并附加连续性约束；视频请求优先使用本镜最新图片版本作为参考首帧。成功输出由 Worker 写入 `AssetRecord`，重新生成会增加版本并使用 `parentAssetId` 保留血缘。
+`kind` 支持 `image` 和 `video`。图片请求会依次收集上一镜尾帧、本镜首帧、分镜参考，再按角色、场景、道具收集主参考与补充参考，去重后最多保留 10 张。提示词会附加 `@图片N：语义` 列表，与 `referenceUris` 保持完全一致的顺序，同时保留连续性约束。视频请求优先使用本镜最新图片版本作为参考首帧。成功输出由 Worker 写入 `AssetRecord`，重新生成会增加版本并使用 `parentAssetId` 保留血缘。
 
 提交成功返回 HTTP 202 和 `status_url`。`expectedVersion` 过期返回 409，缺少幂等键返回 400，Provider 未配置返回 503。Mock 响应会明确标记 `mode: "mock"`；请通过 `GET /v1/jobs/:jobId` 跟踪最终状态。
 

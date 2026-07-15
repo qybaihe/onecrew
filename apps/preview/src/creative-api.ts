@@ -3,6 +3,7 @@ import type {
   CreativeEntity,
   CreativeGenerationBatch,
   CreativeProjectBundle,
+  CreativeReferenceGridResult,
   CreativeStoryPlan,
   CreativeStoryPlanApplyResult,
   EpisodeSpec,
@@ -70,6 +71,11 @@ export interface CreativeStoryPlanPreview {
 export interface CreativeStoryPlanApplyResponse {
   ok: true;
   applied: CreativeStoryPlanApplyResult;
+}
+
+export interface CreativeReferenceGridResponse {
+  ok: true;
+  result: CreativeReferenceGridResult;
 }
 
 export interface CreativeGenerationBatchResponse {
@@ -281,6 +287,33 @@ export async function updateCreativeEntity(
     body: JSON.stringify({ ...editContext(expectedVersion), patch }),
   });
   return json<CreativeEditResponse<CreativeEntity>>(response);
+}
+
+export async function preprocessCreativeReferenceGrid(
+  entityId: string,
+  sourceAssetId: string,
+  expectedEntityVersion: number,
+  rows: number,
+  columns: number,
+): Promise<CreativeReferenceGridResponse> {
+  const response = await request(
+    `/v1/creative/entities/${encodeURIComponent(entityId)}/reference-grids`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `studio_reference_grid_${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        sourceAssetId,
+        expectedEntityVersion,
+        rows,
+        columns,
+        actorOpenId: 'ou_local_studio',
+      }),
+    },
+  );
+  return json<CreativeReferenceGridResponse>(response);
 }
 
 export async function submitCreativeShotGeneration(

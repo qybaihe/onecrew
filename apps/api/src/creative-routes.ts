@@ -14,6 +14,7 @@ import {
 import {
   characterSpecSchema,
   creativeGenerationBatchRequestSchema,
+  creativeReferenceGridRequestSchema,
   creativeStoryPlanRequestSchema,
   episodeSpecSchema,
   propSpecSchema,
@@ -23,19 +24,22 @@ import {
 import {
   IdempotencyConflictError,
   InvalidCreativeAssetBindingError,
+  InvalidCreativeReferenceGridError,
   RecordNotFoundError,
   type CreativeRepository,
   type ShotRepository,
 } from '@onecrew/db';
 import { VersionConflictError } from '@onecrew/domain';
-import type { S3MediaStore } from '@onecrew/media';
+import { InvalidImageGridError, type S3MediaStore } from '@onecrew/media';
 import {
   CreativeGenerationBatchValidationError,
+  CreativeReferenceGridSourceError,
   CreativeStoryPlanNotReadyError,
   CreativeStoryPlanOutputError,
   type CreativeStoryPlanner,
   ProviderSubmissionInProgressError,
   type CreativeGenerationBatchOrchestrator,
+  type CreativeReferenceGridProcessor,
   type ProviderOrchestrator,
   type QcOrchestrator,
 } from '@onecrew/workflows';
@@ -60,6 +64,7 @@ export interface CreativeRouteOptions {
   batchGenerator?: Pick<CreativeGenerationBatchOrchestrator, 'submit' | 'get' | 'latest' | 'cancel' | 'retry'>;
   continuityQc?: Pick<QcOrchestrator, 'submit'>;
   storyPlanner?: Pick<CreativeStoryPlanner, 'submit' | 'preview' | 'apply'>;
+  referenceGrid?: Pick<CreativeReferenceGridProcessor, 'process'>;
 }
 
 const importOptionsSchema = z.object({
@@ -333,6 +338,23 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
     }
   });
 
+  app.post('/v1/creative/entities/:entityId/reference-grids', async (request, reply) => {
+    if (!options?.referenceGrid) return creativeError(reply, new CreativeReferenceGridNotConfiguredError());
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingCreativeReferenceGridIdempotencyKeyError();
+      const { entityId } = request.params as { entityId: string };
+      const result = await options.referenceGrid.process(
+        entityId,
+        creativeReferenceGridRequestSchema.parse(request.body),
+        idempotencyKey,
+      );
+      return { ok: true, result };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
   app.post('/v1/creative/shots/:shotId/generations', async (request, reply) => {
     if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
     if (!options.shotRepository || !options.generator) {
@@ -567,6 +589,13 @@ export class CreativeStoryPlannerNotConfiguredError extends Error {
   }
 }
 
+export class CreativeReferenceGridNotConfiguredError extends Error {
+  constructor() {
+    super('Creative reference-grid preprocessing is not configured');
+    this.name = 'CreativeReferenceGridNotConfiguredError';
+  }
+}
+
 export class MissingCreativeGenerationIdempotencyKeyError extends Error {
   constructor() {
     super('Idempotency-Key header is required for creative generation');
@@ -588,6 +617,13 @@ export class MissingCreativeStoryPlanIdempotencyKeyError extends Error {
   }
 }
 
+export class MissingCreativeReferenceGridIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for creative reference-grid preprocessing');
+    this.name = 'MissingCreativeReferenceGridIdempotencyKeyError';
+  }
+}
+
 export class InvalidCreativeArchiveError extends Error {
   constructor(message: string) {
     super(message);
@@ -603,7 +639,8 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeMediaStoreNotConfiguredError ||
     error instanceof CreativeGenerationNotConfiguredError ||
     error instanceof CreativeContinuityQcNotConfiguredError ||
-    error instanceof CreativeStoryPlannerNotConfiguredError
+    error instanceof CreativeStoryPlannerNotConfiguredError ||
+    error instanceof CreativeReferenceGridNotConfiguredError
   ) {
     reply.code(503);
   } else if (error instanceof RecordNotFoundError) {
@@ -621,6 +658,10 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof MissingCreativeGenerationIdempotencyKeyError ||
     error instanceof MissingCreativeContinuityQcIdempotencyKeyError ||
     error instanceof MissingCreativeStoryPlanIdempotencyKeyError ||
+    error instanceof MissingCreativeReferenceGridIdempotencyKeyError ||
+    error instanceof InvalidCreativeReferenceGridError ||
+    error instanceof InvalidImageGridError ||
+    error instanceof CreativeReferenceGridSourceError ||
     error instanceof CreativeContinuityQcAssetError ||
     error instanceof CreativeStoryPlanOutputError ||
     error instanceof CreativeStoryPlanValidationError ||

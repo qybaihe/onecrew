@@ -15,6 +15,7 @@ import {
   BullQcQueue,
   BullRenderQueue,
   CreativeGenerationBatchOrchestrator,
+  CreativeReferenceGridProcessor,
   CreativeStoryPlanner,
   LocalizationOrchestrator,
   ProductionWorkflow,
@@ -70,6 +71,12 @@ const creativeGenerationBatchOrchestrator = new CreativeGenerationBatchOrchestra
   providerOrchestrator,
 );
 const creativeStoryPlanner = new CreativeStoryPlanner(repositories.creative, providerOrchestrator);
+const creativeReferenceGridProcessor = new CreativeReferenceGridProcessor(
+  repositories.creative,
+  repositories.assets,
+  mediaStore,
+  env.FFMPEG_PATH,
+);
 const providerCallbackProcessor = new ProviderCallbackProcessor(repositories);
 const localizationQueue = new BullLocalizationQueue(env.REDIS_URL);
 const localizationOrchestrator = new LocalizationOrchestrator(
@@ -252,6 +259,7 @@ const app = createApp({
     batchGenerator: creativeGenerationBatchOrchestrator,
     continuityQc: qcOrchestrator,
     storyPlanner: creativeStoryPlanner,
+    referenceGrid: creativeReferenceGridProcessor,
   },
   feishu: {
     security: {

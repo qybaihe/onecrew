@@ -4,6 +4,7 @@ import {
   creativeEntitySchema,
   creativeGenerationBatchSchema,
   creativeProjectBundleSchema,
+  creativeReferenceGridResultSchema,
   creativeStoryPlanApplyResultSchema,
   episodeSpecSchema,
   feishuCardActionSchema,
@@ -28,6 +29,7 @@ import {
   type CreativeEntity,
   type CreativeGenerationBatch,
   type CreativeProjectBundle,
+  type CreativeReferenceGridResult,
   type CreativeStoryPlanApplyResult,
   type EpisodeSpec,
   type FeishuCardAction,
@@ -109,6 +111,13 @@ export class InvalidCreativeAssetBindingError extends Error {
   constructor(readonly assetIds: string[]) {
     super(`Creative entity references assets outside its project: ${assetIds.join(', ')}`);
     this.name = 'InvalidCreativeAssetBindingError';
+  }
+}
+
+export class InvalidCreativeReferenceGridError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCreativeReferenceGridError';
   }
 }
 
@@ -251,6 +260,17 @@ export interface CreativeStoryPlanAppendInput {
   actorOpenId: string;
   episodes: EpisodeSpec[];
   entities: CreativeEntity[];
+}
+
+export interface CreativeReferenceGridApplyInput {
+  entityId: string;
+  sourceAssetId: string;
+  expectedEntityVersion: number;
+  rows: number;
+  columns: number;
+  actorOpenId: string;
+  idempotencyKey: string;
+  tiles: AssetRecord[];
 }
 
 type EpisodeEditableField = 'title' | 'description' | 'scriptContent' | 'durationSec' | 'status';
@@ -494,6 +514,122 @@ export class CreativeRepository {
         expectedVersion: input.expectedProjectVersion,
         outcome: 'accepted',
         details: result,
+      });
+      return result;
+    });
+  }
+
+  async applyReferenceGrid(input: CreativeReferenceGridApplyInput): Promise<CreativeReferenceGridResult> {
+    const tiles = input.tiles.map((tile) => assetRecordSchema.parse(tile));
+    if (tiles.length !== input.rows * input.columns || tiles.length < 2 || tiles.length > 9) {
+      throw new InvalidCreativeReferenceGridError('Reference grid tile count does not match rows and columns');
+    }
+    const inputHash = createInputHash({
+      entityId: input.entityId,
+      sourceAssetId: input.sourceAssetId,
+      expectedEntityVersion: input.expectedEntityVersion,
+      rows: input.rows,
+      columns: input.columns,
+      tiles: tiles.map((tile) => ({ assetId: tile.assetId, uri: tile.uri, contentHash: tile.contentHash })),
+    });
+    const auditId = `audit_${createInputHash({
+      scope: 'creative_reference_grid',
+      entityId: input.entityId,
+      key: input.idempotencyKey,
+    }).slice(0, 32)}`;
+    return this.db.transaction(async (tx) => {
+      const [existingAudit] = await tx.select().from(auditLogs).where(eq(auditLogs.auditId, auditId));
+      if (existingAudit) {
+        const details = existingAudit.details as { inputHash?: unknown; result?: unknown };
+        if (details.inputHash !== inputHash) {
+          throw new IdempotencyConflictError(`creative_reference_grid/${input.entityId}`, input.idempotencyKey);
+        }
+        const replay = creativeReferenceGridResultSchema.parse(details.result);
+        return { ...replay, replayed: true };
+      }
+      const [[entityRow], [sourceRow]] = await Promise.all([
+        tx.select().from(creativeEntities).where(eq(creativeEntities.entityId, input.entityId)),
+        tx.select().from(assets).where(eq(assets.assetId, input.sourceAssetId)),
+      ]);
+      if (!entityRow) throw new RecordNotFoundError('creative_entity', input.entityId);
+      if (!sourceRow) throw new RecordNotFoundError('asset', input.sourceAssetId);
+      assertExpectedVersion(input.expectedEntityVersion, entityRow.version);
+      const entity = creativeEntitySchema.parse(entityRow.spec);
+      const source = assetRecordSchema.parse(sourceRow.record);
+      if (source.projectId !== entity.projectId) {
+        throw new InvalidCreativeReferenceGridError('Reference grid source asset must belong to the entity project');
+      }
+      if (!['image', 'character', 'scene', 'prop', 'poster'].includes(source.type)) {
+        throw new InvalidCreativeReferenceGridError(`Reference grid source asset is not an image: ${source.type}`);
+      }
+      if (tiles.some((tile) =>
+        tile.projectId !== entity.projectId || tile.parentAssetId !== source.assetId || tile.type !== 'image'
+      )) {
+        throw new InvalidCreativeReferenceGridError('Derived reference tiles have invalid project, parent, or type');
+      }
+      await tx.insert(assets).values(tiles.map((tile) => ({
+        assetId: tile.assetId,
+        projectId: tile.projectId,
+        shotId: tile.shotId,
+        parentAssetId: tile.parentAssetId,
+        type: tile.type,
+        assetVersion: tile.version,
+        record: tile,
+        status: tile.status,
+        contentHash: tile.contentHash,
+      }))).onConflictDoNothing();
+      const storedTiles = await tx.select().from(assets).where(inArray(assets.assetId, tiles.map((tile) => tile.assetId)));
+      const storedById = new Map(storedTiles.map((row) => [row.assetId, assetRecordSchema.parse(row.record)]));
+      for (const tile of tiles) {
+        const stored = storedById.get(tile.assetId);
+        if (!stored || stored.projectId !== tile.projectId || stored.contentHash !== tile.contentHash || stored.uri !== tile.uri) {
+          throw new InvalidCreativeReferenceGridError(`Reference tile collision: ${tile.assetId}`);
+        }
+      }
+      const nextEntity = creativeEntitySchema.parse({
+        ...entity,
+        referenceAssetIds: [
+          ...entity.referenceAssetIds.filter((assetId) => assetId !== source.assetId),
+          ...tiles.map((tile) => tile.assetId),
+        ].filter((assetId, index, all) => all.indexOf(assetId) === index),
+      });
+      const [updatedEntity] = await tx
+        .update(creativeEntities)
+        .set({
+          spec: nextEntity,
+          version: input.expectedEntityVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(creativeEntities.entityId, input.entityId),
+          eq(creativeEntities.version, input.expectedEntityVersion),
+        ))
+        .returning();
+      if (!updatedEntity) {
+        return throwVersionConflict(this.db, 'creative_entity', input.entityId, input.expectedEntityVersion);
+      }
+      const result = creativeReferenceGridResultSchema.parse({
+        projectId: entity.projectId,
+        entityId: entity.entityId,
+        sourceAssetId: source.assetId,
+        rows: input.rows,
+        columns: input.columns,
+        tileAssetIds: tiles.map((tile) => tile.assetId),
+        entityVersion: updatedEntity.version,
+        replayed: false,
+      });
+      await tx.insert(auditLogs).values({
+        auditId,
+        source: 'creative_reference_grid',
+        eventId: input.idempotencyKey,
+        projectId: entity.projectId,
+        actorOpenId: input.actorOpenId,
+        action: 'split_reference_grid',
+        targetType: entity.kind,
+        targetId: entity.entityId,
+        expectedVersion: input.expectedEntityVersion,
+        outcome: 'accepted',
+        details: { inputHash, result },
       });
       return result;
     });

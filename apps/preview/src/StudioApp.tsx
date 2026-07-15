@@ -33,6 +33,7 @@ import {
   getCreativeStoryPlan,
   importCreativeArchive,
   listCreativeProjects,
+  preprocessCreativeReferenceGrid,
   retryCreativeGenerationBatch,
   submitCreativeGenerationBatch,
   submitCreativeContinuityQc,
@@ -51,6 +52,7 @@ type GenerationKind = 'image' | 'video';
 type GenerationStatus = 'idle' | 'submitting' | JobStatus;
 type ContinuityQcStatus = 'idle' | 'submitting' | QcRunRecord['status'];
 type StoryPlanStatus = 'idle' | 'submitting' | 'applying' | 'applied' | JobStatus;
+type ReferenceGridStatus = 'idle' | 'processing' | 'done';
 
 interface GenerationState {
   status: GenerationStatus;
@@ -284,6 +286,10 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [storyBrief, setStoryBrief] = useState('');
   const [storyEpisodeCount, setStoryEpisodeCount] = useState(3);
   const [storyPlan, setStoryPlan] = useState<StoryPlanState>({ status: 'idle' });
+  const [referenceGridStatus, setReferenceGridStatus] = useState<ReferenceGridStatus>('idle');
+  const [referenceGridSourceId, setReferenceGridSourceId] = useState('');
+  const [referenceGridShape, setReferenceGridShape] = useState('2x2');
+  const [referenceGridTileCount, setReferenceGridTileCount] = useState(0);
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
   const generationSelectionRef = useRef('');
@@ -342,6 +348,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const selectedShot = (bundle?.shots ?? []).find((shot) => shot.shotId === selectedShotId);
   const selectedEpisode = episodes.find((episode) => episode.episodeId === selectedEpisodeId);
   const selectedEntity = entities.find((entity) => entity.entityId === selectedEntityId);
+  const referenceGridSources = versionedAssets.filter((asset) =>
+    ['image', 'character', 'scene', 'prop', 'poster'].includes(asset.type) &&
+    asset.uri.startsWith('s3://') &&
+    !asset.creativeRole?.startsWith('reference-grid-'),
+  );
   const selectedQcAsset = versionedAssets
     .filter((asset) =>
       asset.shotId === selectedShotId &&
@@ -354,6 +365,10 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const shotDirty = useMemo(
     () => Boolean(selectedShot && JSON.stringify(shotForm) !== JSON.stringify(shotDraft(selectedShot))),
     [selectedShot, shotForm],
+  );
+  const entityDirty = useMemo(
+    () => Boolean(selectedEntity && JSON.stringify(entityForm) !== JSON.stringify(entityDraft(selectedEntity))),
+    [selectedEntity, entityForm],
   );
 
   useEffect(() => {
@@ -372,6 +387,9 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   useEffect(() => {
     setEntityForm(entityDraft(selectedEntity));
     setEntitySave('idle');
+    setReferenceGridStatus('idle');
+    setReferenceGridSourceId('');
+    setReferenceGridTileCount(0);
   }, [selectedProjectId, selectedEntityId]);
 
   const handleImport = async (file: File | undefined) => {
@@ -853,6 +871,34 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
         setProject(latest);
         setEntityForm(entityDraft(latest.bundle.entities.find((entity) => entity.entityId === selectedEntity.entityId)));
       }
+    }
+  };
+
+  const handleReferenceGrid = async () => {
+    if (!project || !selectedEntity) return;
+    if (entityDirty) return setError('请先保存当前素材设定，再拆分组合参考图。');
+    const sourceAssetId = referenceGridSourceId || referenceGridSources[0]?.assetId;
+    const expectedVersion = project.versions.entities[selectedEntity.entityId];
+    if (!sourceAssetId || !expectedVersion) return setError('请选择可控的图片资产并确认当前设定版本。');
+    const [rows, columns] = referenceGridShape.split('x').map(Number) as [number, number];
+    setError(undefined);
+    setReferenceGridStatus('processing');
+    try {
+      const response = await preprocessCreativeReferenceGrid(
+        selectedEntity.entityId,
+        sourceAssetId,
+        expectedVersion,
+        rows,
+        columns,
+      );
+      const latest = await getCreativeProject(selectedEntity.projectId);
+      setProject(latest);
+      setEntityForm(entityDraft(latest.bundle.entities.find((entity) => entity.entityId === selectedEntity.entityId)));
+      setReferenceGridTileCount(response.result.tileAssetIds.length);
+      setReferenceGridStatus('done');
+    } catch (reason) {
+      setReferenceGridStatus('idle');
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   };
 
@@ -1407,6 +1453,52 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
                   <textarea rows={3} maxLength={10_000} value={entityForm.detailThree} onChange={(event) => changeEntityField('detailThree', event.target.value)} />
                 </label>
               )}
+              <section className="reference-grid-tool" aria-label="组合参考图拆分">
+                <div>
+                  <strong>组合参考图</strong>
+                  <span>用 FFmpeg 在本地拆分为独立图片，按顺序绑定到当前设定。</span>
+                </div>
+                {referenceGridSources.length === 0 ? (
+                  <p>暂无可拆分的 MinIO 图片资产。</p>
+                ) : (
+                  <>
+                    <label>
+                      <span>源图</span>
+                      <select
+                        value={referenceGridSourceId || referenceGridSources[0]?.assetId}
+                        onChange={(event) => setReferenceGridSourceId(event.target.value)}
+                      >
+                        {referenceGridSources.map((asset) => (
+                          <option key={asset.assetId} value={asset.assetId}>
+                            {asset.creativeRole ?? asset.type} · v{asset.version}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>网格</span>
+                      <select value={referenceGridShape} onChange={(event) => setReferenceGridShape(event.target.value)}>
+                        <option value="1x2">1 × 2</option>
+                        <option value="1x3">1 × 3</option>
+                        <option value="2x2">2 × 2</option>
+                        <option value="2x3">2 × 3</option>
+                        <option value="3x3">3 × 3</option>
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={referenceGridStatus === 'processing' || entityDirty}
+                      onClick={() => void handleReferenceGrid()}
+                    >
+                      {referenceGridStatus === 'processing'
+                        ? '正在拆分…'
+                        : referenceGridStatus === 'done'
+                          ? `已绑定 ${referenceGridTileCount} 张 ✓`
+                          : '拆分并绑定'}
+                    </button>
+                  </>
+                )}
+              </section>
               <fieldset className="asset-bindings">
                 <legend>绑定参考资产</legend>
                 {versionedAssets.length === 0 ? (
