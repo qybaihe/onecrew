@@ -27,6 +27,86 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL repositories', () => {
+  it('searches controlled assets globally and reuses one through a project-local lineage alias', async () => {
+    const originProjectId = `prj_library_origin_${suffix}`;
+    const targetProjectId = `prj_library_target_${suffix}`;
+    const originEntityId = `character_library_origin_${suffix}`;
+    const targetEntityId = `character_library_target_${suffix}`;
+    const sourceAssetId = `asset_library_source_${suffix}`;
+    const makeProject = (
+      projectId: string,
+      nameZh: string,
+      entityId: string,
+      referenceAssetIds: string[],
+    ) => creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0', source: { system: 'onecrew' },
+      project: {
+        projectId, nameZh, nameEn: nameZh, synopsis: '全局素材复用测试。', audience: '开发测试',
+        genres: ['test'], ownerOpenId: 'ou_library_owner', locales: ['zh-CN'], aspectRatios: ['16:9'],
+        budgetLimitCny: 1, status: 'draft',
+      },
+      episodes: [{
+        episodeId: `episode_${projectId}`, projectId, episodeNumber: 1, title: '第一集', scriptContent: '',
+        durationSec: 1, characterIds: [entityId], sceneIds: [], propIds: [], status: 'draft',
+      }],
+      entities: [{
+        entityId, projectId, kind: 'character', name: nameZh, referenceAssetIds, extraAssetIds: [],
+        identityAnchors: [], styleTokens: [], colorPalette: [], stages: [], sortOrder: 0, status: 'draft',
+      }],
+      shots: [], framePrompts: [], mediaFiles: [],
+    });
+    await repositories.creative.importBundle(
+      makeProject(originProjectId, '全局图书馆角色', originEntityId, [sourceAssetId]),
+    );
+    await repositories.creative.importBundle(
+      makeProject(targetProjectId, '目标角色', targetEntityId, []),
+    );
+    const createdAt = new Date().toISOString();
+    await repositories.assets.create(assetRecordSchema.parse({
+      assetId: sourceAssetId, projectId: originProjectId, type: 'character', version: 1,
+      uri: `s3://onecrew/library/${sourceAssetId}.png`, provider: 'import', model: 'source',
+      source: 'global library fixture', license: 'fixture', creativeRole: 'character-master',
+      contentHash: 'a'.repeat(64), status: 'draft', createdAt, updatedAt: createdAt,
+    }));
+    const search = await repositories.creative.searchReusableAssets({
+      q: '全局图书馆', kind: 'character', excludeProjectId: targetProjectId,
+    });
+    expect(search).toHaveLength(1);
+    expect(search[0]).toMatchObject({
+      asset: { assetId: sourceAssetId },
+      originProject: { projectId: originProjectId },
+      originEntity: { entityId: originEntityId, name: '全局图书馆角色' },
+    });
+    const input = {
+      entityId: targetEntityId, sourceAssetId, expectedEntityVersion: 1,
+      actorOpenId: 'ou_library_editor', idempotencyKey: `reuse_library_${suffix}`,
+    };
+    const reused = await repositories.creative.reuseAsset(input);
+    expect(reused).toMatchObject({
+      projectId: targetProjectId, entityId: targetEntityId, sourceAssetId, entityVersion: 2, replayed: false,
+    });
+    expect(reused.reusedAssetId).not.toBe(sourceAssetId);
+    const [targetBundle, targetAssets] = await Promise.all([
+      repositories.creative.getBundle(targetProjectId),
+      repositories.creative.listAssets(targetProjectId),
+    ]);
+    expect(targetBundle.entities[0]?.referenceAssetIds).toEqual([reused.reusedAssetId]);
+    expect(targetAssets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        assetId: reused.reusedAssetId,
+        parentAssetId: sourceAssetId,
+        uri: `s3://onecrew/library/${sourceAssetId}.png`,
+        provider: 'import',
+      }),
+    ]));
+    await expect(repositories.creative.reuseAsset(input)).resolves.toMatchObject({
+      entityVersion: 2, replayed: true,
+    });
+    await expect(repositories.creative.reuseAsset({
+      ...input, idempotencyKey: `reuse_library_stale_${suffix}`,
+    })).rejects.toBeInstanceOf(VersionConflictError);
+  });
+
   it('atomically registers reference-grid tiles and replaces the composite entity binding', async () => {
     const projectId = `prj_reference_grid_${suffix}`;
     const entityId = `character_reference_grid_${suffix}`;

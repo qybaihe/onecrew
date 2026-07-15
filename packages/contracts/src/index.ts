@@ -1059,6 +1059,35 @@ export const creativeReferenceGridResultSchema = z.object({
   replayed: z.boolean(),
 });
 
+export const creativeReusableAssetSchema = z.object({
+  asset: assetRecordSchema,
+  originProject: z.object({
+    projectId: idSchema,
+    nameZh: z.string().min(1).max(200),
+    nameEn: z.string().min(1).max(200),
+  }),
+  originEntity: z.object({
+    entityId: idSchema,
+    kind: creativeEntityKindSchema,
+    name: z.string().min(1).max(300),
+  }).optional(),
+});
+
+export const creativeReusableAssetReuseRequestSchema = z.object({
+  sourceAssetId: idSchema,
+  expectedEntityVersion: z.number().int().positive(),
+  actorOpenId: idSchema,
+});
+
+export const creativeReusableAssetReuseResultSchema = z.object({
+  projectId: idSchema,
+  entityId: idSchema,
+  sourceAssetId: idSchema,
+  reusedAssetId: idSchema,
+  entityVersion: z.number().int().positive(),
+  replayed: z.boolean(),
+});
+
 export const creativeStoryPlanRequestSchema = z.object({
   brief: z.string().min(1).max(20_000),
   episodeCount: z.number().int().min(1).max(12).default(3),
@@ -1161,6 +1190,9 @@ export const contractSchemas = {
   CreativeGenerationBatch: creativeGenerationBatchSchema,
   CreativeReferenceGridRequest: creativeReferenceGridRequestSchema,
   CreativeReferenceGridResult: creativeReferenceGridResultSchema,
+  CreativeReusableAsset: creativeReusableAssetSchema,
+  CreativeReusableAssetReuseRequest: creativeReusableAssetReuseRequestSchema,
+  CreativeReusableAssetReuseResult: creativeReusableAssetReuseResultSchema,
   CreativeStoryPlanRequest: creativeStoryPlanRequestSchema,
   CreativeStoryPlan: creativeStoryPlanSchema,
   CreativeStoryPlanApplyResult: creativeStoryPlanApplyResultSchema,
@@ -1221,6 +1253,9 @@ export type CreativeGenerationBatchItem = z.infer<typeof creativeGenerationBatch
 export type CreativeGenerationBatch = z.infer<typeof creativeGenerationBatchSchema>;
 export type CreativeReferenceGridRequest = z.infer<typeof creativeReferenceGridRequestSchema>;
 export type CreativeReferenceGridResult = z.infer<typeof creativeReferenceGridResultSchema>;
+export type CreativeReusableAsset = z.infer<typeof creativeReusableAssetSchema>;
+export type CreativeReusableAssetReuseRequest = z.infer<typeof creativeReusableAssetReuseRequestSchema>;
+export type CreativeReusableAssetReuseResult = z.infer<typeof creativeReusableAssetReuseResultSchema>;
 export type CreativeStoryPlanRequest = z.infer<typeof creativeStoryPlanRequestSchema>;
 export type CreativeStoryPlan = z.infer<typeof creativeStoryPlanSchema>;
 export type CreativeStoryPlanApplyResult = z.infer<typeof creativeStoryPlanApplyResultSchema>;

@@ -5,6 +5,8 @@ import {
   creativeGenerationBatchSchema,
   creativeProjectBundleSchema,
   creativeReferenceGridResultSchema,
+  creativeReusableAssetReuseResultSchema,
+  creativeReusableAssetSchema,
   creativeStoryPlanApplyResultSchema,
   episodeSpecSchema,
   feishuCardActionSchema,
@@ -30,6 +32,8 @@ import {
   type CreativeGenerationBatch,
   type CreativeProjectBundle,
   type CreativeReferenceGridResult,
+  type CreativeReusableAsset,
+  type CreativeReusableAssetReuseResult,
   type CreativeStoryPlanApplyResult,
   type EpisodeSpec,
   type FeishuCardAction,
@@ -118,6 +122,13 @@ export class InvalidCreativeReferenceGridError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'InvalidCreativeReferenceGridError';
+  }
+}
+
+export class InvalidCreativeReusableAssetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCreativeReusableAssetError';
   }
 }
 
@@ -273,6 +284,21 @@ export interface CreativeReferenceGridApplyInput {
   tiles: AssetRecord[];
 }
 
+export interface CreativeReusableAssetSearchInput {
+  q?: string;
+  kind?: CreativeEntity['kind'];
+  excludeProjectId?: string;
+  limit?: number;
+}
+
+export interface CreativeReusableAssetApplyInput {
+  entityId: string;
+  sourceAssetId: string;
+  expectedEntityVersion: number;
+  actorOpenId: string;
+  idempotencyKey: string;
+}
+
 type EpisodeEditableField = 'title' | 'description' | 'scriptContent' | 'durationSec' | 'status';
 type ShotEditableFields = Omit<ShotSpec, 'shotId' | 'projectId' | 'episodeId' | 'sequence'>;
 
@@ -413,6 +439,73 @@ export class CreativeRepository {
       .where(eq(assets.projectId, projectId))
       .orderBy(desc(assets.createdAt));
     return rows.map((row) => assetRecordSchema.parse(row.record));
+  }
+
+  async searchReusableAssets(input: CreativeReusableAssetSearchInput): Promise<CreativeReusableAsset[]> {
+    const [assetRows, projectRows, entityRows] = await Promise.all([
+      this.db.select().from(assets).orderBy(desc(assets.createdAt)),
+      this.db.select().from(projects),
+      this.db.select().from(creativeEntities),
+    ]);
+    const projectById = new Map(
+      projectRows.map((row) => [row.projectId, projectSpecSchema.parse(row.spec)] as const),
+    );
+    const entityByAssetId = new Map<string, CreativeEntity>();
+    for (const row of entityRows) {
+      const entity = creativeEntitySchema.parse(row.spec);
+      for (const assetId of [...entity.referenceAssetIds, ...entity.extraAssetIds]) {
+        if (!entityByAssetId.has(assetId)) entityByAssetId.set(assetId, entity);
+      }
+    }
+    const query = input.q?.trim().toLocaleLowerCase() ?? '';
+    const limit = Math.min(50, Math.max(1, input.limit ?? 12));
+    const seenContentHashes = new Set<string>();
+    const results: CreativeReusableAsset[] = [];
+    for (const row of assetRows) {
+      const asset = assetRecordSchema.parse(row.record);
+      if (
+        asset.status === 'archived' ||
+        !asset.uri.startsWith('s3://') ||
+        !['image', 'character', 'scene', 'prop', 'poster'].includes(asset.type) ||
+        asset.assetId.startsWith('asset_reuse_') ||
+        asset.projectId === input.excludeProjectId ||
+        seenContentHashes.has(asset.contentHash)
+      ) continue;
+      const project = projectById.get(asset.projectId);
+      if (!project) continue;
+      const entity = entityByAssetId.get(asset.assetId);
+      if (input.kind && entity && entity.kind !== input.kind) continue;
+      if (
+        input.kind &&
+        !entity &&
+        ['character', 'scene', 'prop'].includes(asset.type) &&
+        asset.type !== input.kind
+      ) continue;
+      const haystack = [
+        asset.assetId,
+        asset.type,
+        asset.creativeRole,
+        asset.source,
+        project.nameZh,
+        project.nameEn,
+        entity?.name,
+      ].filter(Boolean).join('\n').toLocaleLowerCase();
+      if (query && !haystack.includes(query)) continue;
+      seenContentHashes.add(asset.contentHash);
+      results.push(creativeReusableAssetSchema.parse({
+        asset,
+        originProject: {
+          projectId: project.projectId,
+          nameZh: project.nameZh,
+          nameEn: project.nameEn,
+        },
+        ...(entity ? {
+          originEntity: { entityId: entity.entityId, kind: entity.kind, name: entity.name },
+        } : {}),
+      }));
+      if (results.length >= limit) break;
+    }
+    return results;
   }
 
   async getRecordVersions(projectId: string): Promise<CreativeRecordVersions> {
@@ -625,6 +718,124 @@ export class CreativeRepository {
         projectId: entity.projectId,
         actorOpenId: input.actorOpenId,
         action: 'split_reference_grid',
+        targetType: entity.kind,
+        targetId: entity.entityId,
+        expectedVersion: input.expectedEntityVersion,
+        outcome: 'accepted',
+        details: { inputHash, result },
+      });
+      return result;
+    });
+  }
+
+  async reuseAsset(input: CreativeReusableAssetApplyInput): Promise<CreativeReusableAssetReuseResult> {
+    const inputHash = createInputHash({
+      entityId: input.entityId,
+      sourceAssetId: input.sourceAssetId,
+      expectedEntityVersion: input.expectedEntityVersion,
+    });
+    const auditId = `audit_${createInputHash({
+      scope: 'creative_reusable_asset',
+      entityId: input.entityId,
+      key: input.idempotencyKey,
+    }).slice(0, 32)}`;
+    return this.db.transaction(async (tx) => {
+      const [existingAudit] = await tx.select().from(auditLogs).where(eq(auditLogs.auditId, auditId));
+      if (existingAudit) {
+        const details = existingAudit.details as { inputHash?: unknown; result?: unknown };
+        if (details.inputHash !== inputHash) {
+          throw new IdempotencyConflictError(`creative_reusable_asset/${input.entityId}`, input.idempotencyKey);
+        }
+        const replay = creativeReusableAssetReuseResultSchema.parse(details.result);
+        return { ...replay, replayed: true };
+      }
+      const [[entityRow], [sourceRow]] = await Promise.all([
+        tx.select().from(creativeEntities).where(eq(creativeEntities.entityId, input.entityId)),
+        tx.select().from(assets).where(eq(assets.assetId, input.sourceAssetId)),
+      ]);
+      if (!entityRow) throw new RecordNotFoundError('creative_entity', input.entityId);
+      if (!sourceRow) throw new RecordNotFoundError('asset', input.sourceAssetId);
+      assertExpectedVersion(input.expectedEntityVersion, entityRow.version);
+      const entity = creativeEntitySchema.parse(entityRow.spec);
+      const sourceAsset = assetRecordSchema.parse(sourceRow.record);
+      if (
+        sourceAsset.status === 'archived' ||
+        !sourceAsset.uri.startsWith('s3://') ||
+        !['image', 'character', 'scene', 'prop', 'poster'].includes(sourceAsset.type)
+      ) {
+        throw new InvalidCreativeReusableAssetError('Reusable asset must be an active controlled image asset');
+      }
+      const now = new Date().toISOString();
+      const reusedAsset = sourceAsset.projectId === entity.projectId
+        ? sourceAsset
+        : assetRecordSchema.parse({
+            ...sourceAsset,
+            assetId: `asset_reuse_${createInputHash({
+              sourceAssetId: sourceAsset.assetId,
+              targetProjectId: entity.projectId,
+            }).slice(0, 32)}`,
+            projectId: entity.projectId,
+            shotId: undefined,
+            parentAssetId: sourceAsset.assetId,
+            version: 1,
+            source: `Reusable project alias of ${sourceAsset.assetId}`,
+            status: 'draft',
+            createdAt: now,
+            updatedAt: now,
+          });
+      if (reusedAsset.assetId !== sourceAsset.assetId) {
+        await tx.insert(assets).values({
+          assetId: reusedAsset.assetId,
+          projectId: reusedAsset.projectId,
+          parentAssetId: reusedAsset.parentAssetId,
+          type: reusedAsset.type,
+          assetVersion: reusedAsset.version,
+          record: reusedAsset,
+          status: reusedAsset.status,
+          contentHash: reusedAsset.contentHash,
+        }).onConflictDoNothing();
+        const [storedRow] = await tx.select().from(assets).where(eq(assets.assetId, reusedAsset.assetId));
+        const stored = storedRow ? assetRecordSchema.parse(storedRow.record) : undefined;
+        if (
+          !stored ||
+          stored.projectId !== entity.projectId ||
+          stored.uri !== reusedAsset.uri ||
+          stored.contentHash !== reusedAsset.contentHash ||
+          stored.parentAssetId !== sourceAsset.assetId
+        ) {
+          throw new InvalidCreativeReusableAssetError(`Reusable asset collision: ${reusedAsset.assetId}`);
+        }
+      }
+      const nextEntity = creativeEntitySchema.parse({
+        ...entity,
+        referenceAssetIds: [...new Set([...entity.referenceAssetIds, reusedAsset.assetId])],
+      });
+      const [updatedEntity] = await tx
+        .update(creativeEntities)
+        .set({ spec: nextEntity, version: input.expectedEntityVersion + 1, updatedAt: new Date() })
+        .where(and(
+          eq(creativeEntities.entityId, input.entityId),
+          eq(creativeEntities.version, input.expectedEntityVersion),
+        ))
+        .returning();
+      if (!updatedEntity) {
+        return throwVersionConflict(this.db, 'creative_entity', input.entityId, input.expectedEntityVersion);
+      }
+      const result = creativeReusableAssetReuseResultSchema.parse({
+        projectId: entity.projectId,
+        entityId: entity.entityId,
+        sourceAssetId: sourceAsset.assetId,
+        reusedAssetId: reusedAsset.assetId,
+        entityVersion: updatedEntity.version,
+        replayed: false,
+      });
+      await tx.insert(auditLogs).values({
+        auditId,
+        source: 'creative_asset_library',
+        eventId: input.idempotencyKey,
+        projectId: entity.projectId,
+        actorOpenId: input.actorOpenId,
+        action: 'reuse_creative_asset',
         targetType: entity.kind,
         targetId: entity.entityId,
         expectedVersion: input.expectedEntityVersion,

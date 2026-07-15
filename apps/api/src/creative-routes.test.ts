@@ -181,6 +181,7 @@ describe('creative routes', () => {
     let continuityQcRequest: QcRunRequest | undefined;
     let storyPlanRequest: CreativeStoryPlanRequest | undefined;
     let referenceGridRequest: CreativeReferenceGridRequest | undefined;
+    let reusedAssetInput: { entityId: string; sourceAssetId: string; expectedEntityVersion: number } | undefined;
     const storyPlan = creativeStoryPlanSchema.parse({
       title: '星门续章', logline: '导航员抵达星门。',
       episodes: [{
@@ -206,6 +207,16 @@ describe('creative routes', () => {
       status: 'draft',
       createdAt: now,
       updatedAt: now,
+    });
+    const reusableAsset = assetRecordSchema.parse({
+      ...qcAsset,
+      assetId: 'asset_api_reusable',
+      projectId: 'prj_api_library_origin',
+      shotId: undefined,
+      type: 'scene',
+      uri: 's3://onecrew/library/api-reusable.png',
+      creativeRole: 'scene-master',
+      contentHash: 'b'.repeat(64),
     });
     const batchRecord = creativeGenerationBatchSchema.parse({
       batchId: 'batch_api_generation',
@@ -413,6 +424,33 @@ describe('creative routes', () => {
             };
           },
         },
+        reusableAssets: {
+          async searchReusableAssets(input) {
+            if (input.kind !== 'scene' || input.excludeProjectId !== projectId) {
+              throw new Error('wrong reusable asset search');
+            }
+            return [{
+              asset: reusableAsset,
+              originProject: {
+                projectId: reusableAsset.projectId,
+                nameZh: '全局场景库',
+                nameEn: 'Global scene library',
+              },
+              originEntity: { entityId: 'scene_api_library', kind: 'scene' as const, name: '星海边界' },
+            }];
+          },
+          async reuseAsset(input) {
+            reusedAssetInput = input;
+            return {
+              projectId,
+              entityId: input.entityId,
+              sourceAssetId: input.sourceAssetId,
+              reusedAssetId: 'asset_reuse_api_scene',
+              entityVersion: 3,
+              replayed: false,
+            };
+          },
+        },
       },
     });
 
@@ -480,6 +518,50 @@ describe('creative routes', () => {
       expectedEntityVersion: 2,
       rows: 2,
       columns: 2,
+    });
+
+    const reusableSearch = await app.inject({
+      method: 'GET',
+      url: `/v1/creative/reusable-assets?q=星海&kind=scene&excludeProjectId=${projectId}&limit=5`,
+    });
+    expect(reusableSearch.statusCode).toBe(200);
+    expect(reusableSearch.json()).toMatchObject({
+      items: [{
+        asset: { assetId: reusableAsset.assetId },
+        originProject: { nameZh: '全局场景库' },
+        originEntity: { name: '星海边界' },
+      }],
+    });
+
+    const missingReuseKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/entities/${entityId}/reusable-assets`,
+      payload: {
+        sourceAssetId: reusableAsset.assetId,
+        expectedEntityVersion: 2,
+        actorOpenId: 'ou_studio',
+      },
+    });
+    expect(missingReuseKey.statusCode).toBe(400);
+
+    const reuseAsset = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/entities/${entityId}/reusable-assets`,
+      headers: { 'idempotency-key': 'creative_reuse_asset_1' },
+      payload: {
+        sourceAssetId: reusableAsset.assetId,
+        expectedEntityVersion: 2,
+        actorOpenId: 'ou_studio',
+      },
+    });
+    expect(reuseAsset.statusCode).toBe(200);
+    expect(reuseAsset.json()).toMatchObject({
+      result: { reusedAssetId: 'asset_reuse_api_scene', entityVersion: 3 },
+    });
+    expect(reusedAssetInput).toMatchObject({
+      entityId,
+      sourceAssetId: reusableAsset.assetId,
+      expectedEntityVersion: 2,
     });
 
     const missingStoryPlanKey = await app.inject({

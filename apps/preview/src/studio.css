@@ -333,6 +333,19 @@
 .reference-grid-tool select { min-width: 0; min-height: 2.4rem; padding: 0 0.48rem; color: var(--ink); background: oklch(0.14 0.035 250 / 0.8); border: 1px solid var(--line); border-radius: 0.45rem; font-size: 0.61rem; }
 .reference-grid-tool button { grid-column: 1 / -1; min-height: 2.5rem; color: var(--ink); background: oklch(0.27 0.08 190 / 0.72); border: 1px solid oklch(0.7 0.12 185 / 0.5); border-radius: 0.48rem; font-size: 0.64rem; font-weight: 700; cursor: pointer; }
 .reference-grid-tool button:disabled { cursor: not-allowed; opacity: 0.48; }
+.reusable-asset-tool { padding: 0.7rem; display: grid; gap: 0.55rem; background: oklch(0.18 0.045 278 / 0.6); border: 1px solid oklch(0.72 0.11 300 / 0.28); border-radius: 0.6rem; }
+.reusable-asset-tool > div:first-child strong, .reusable-asset-tool > div:first-child span { display: block; }
+.reusable-asset-tool > div:first-child strong { color: oklch(0.82 0.11 305); font-size: 0.66rem; }
+.reusable-asset-tool > div:first-child span, .reusable-asset-tool > p { margin: 0.22rem 0 0; color: var(--muted); font-size: 0.58rem; line-height: 1.55; }
+.reusable-asset-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem; }
+.reusable-asset-search input { min-height: 2.4rem; }
+.reusable-asset-search button, .reusable-asset-results button { min-width: 3.6rem; color: var(--ink); background: oklch(0.3 0.09 298 / 0.55); border: 1px solid oklch(0.72 0.11 300 / 0.38); border-radius: 0.45rem; font-size: 0.61rem; cursor: pointer; }
+.reusable-asset-search button:disabled, .reusable-asset-results button:disabled { cursor: not-allowed; opacity: 0.48; }
+.reusable-asset-results { display: grid; gap: 0.38rem; }
+.reusable-asset-results article { padding: 0.5rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; background: oklch(0.14 0.035 250 / 0.68); border-radius: 0.45rem; }
+.reusable-asset-results strong, .reusable-asset-results small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reusable-asset-results strong { font-size: 0.62rem; }
+.reusable-asset-results small { margin-top: 0.16rem; color: var(--muted); font-size: 0.54rem; }
 .asset-bindings { margin: 0; padding: 0.7rem; display: grid; gap: 0.45rem; border: 1px solid var(--line); border-radius: 0.6rem; }
 .asset-bindings legend { padding: 0 0.3rem; color: var(--teal); font-size: 0.61rem; }
 .asset-bindings > p { margin: 0; color: var(--muted); font-size: 0.64rem; line-height: 1.5; }

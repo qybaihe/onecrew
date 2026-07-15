@@ -15,6 +15,7 @@ import {
   characterSpecSchema,
   creativeGenerationBatchRequestSchema,
   creativeReferenceGridRequestSchema,
+  creativeReusableAssetReuseRequestSchema,
   creativeStoryPlanRequestSchema,
   episodeSpecSchema,
   propSpecSchema,
@@ -25,6 +26,7 @@ import {
   IdempotencyConflictError,
   InvalidCreativeAssetBindingError,
   InvalidCreativeReferenceGridError,
+  InvalidCreativeReusableAssetError,
   RecordNotFoundError,
   type CreativeRepository,
   type ShotRepository,
@@ -65,6 +67,7 @@ export interface CreativeRouteOptions {
   continuityQc?: Pick<QcOrchestrator, 'submit'>;
   storyPlanner?: Pick<CreativeStoryPlanner, 'submit' | 'preview' | 'apply'>;
   referenceGrid?: Pick<CreativeReferenceGridProcessor, 'process'>;
+  reusableAssets?: Pick<CreativeRepository, 'searchReusableAssets' | 'reuseAsset'>;
 }
 
 const importOptionsSchema = z.object({
@@ -132,12 +135,35 @@ const storyPlanApplySchema = z.object({
   actorOpenId: z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
 });
 const batchRetrySchema = z.object({ route: z.enum(['primary', 'fallback']).default('primary') });
+const reusableAssetSearchSchema = z.object({
+  q: z.string().max(200).optional(),
+  kind: z.enum(['character', 'scene', 'prop']).optional(),
+  excludeProjectId: z.string().min(1).max(128).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(12),
+});
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
 export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeRouteOptions): void {
+  app.get('/v1/creative/reusable-assets', async (request, reply) => {
+    if (!options?.reusableAssets) return creativeError(reply, new CreativeReusableAssetsNotConfiguredError());
+    try {
+      const query = reusableAssetSearchSchema.parse(request.query);
+      return {
+        items: await options.reusableAssets.searchReusableAssets({
+          limit: query.limit,
+          ...(query.q ? { q: query.q } : {}),
+          ...(query.kind ? { kind: query.kind } : {}),
+          ...(query.excludeProjectId ? { excludeProjectId: query.excludeProjectId } : {}),
+        }),
+      };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
   app.get('/v1/creative/projects', async (_request, reply) => {
     if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
     try {
@@ -349,6 +375,20 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
         creativeReferenceGridRequestSchema.parse(request.body),
         idempotencyKey,
       );
+      return { ok: true, result };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.post('/v1/creative/entities/:entityId/reusable-assets', async (request, reply) => {
+    if (!options?.reusableAssets) return creativeError(reply, new CreativeReusableAssetsNotConfiguredError());
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingCreativeReusableAssetIdempotencyKeyError();
+      const { entityId } = request.params as { entityId: string };
+      const input = creativeReusableAssetReuseRequestSchema.parse(request.body);
+      const result = await options.reusableAssets.reuseAsset({ entityId, idempotencyKey, ...input });
       return { ok: true, result };
     } catch (error) {
       return creativeError(reply, error);
@@ -596,6 +636,13 @@ export class CreativeReferenceGridNotConfiguredError extends Error {
   }
 }
 
+export class CreativeReusableAssetsNotConfiguredError extends Error {
+  constructor() {
+    super('Creative reusable asset library is not configured');
+    this.name = 'CreativeReusableAssetsNotConfiguredError';
+  }
+}
+
 export class MissingCreativeGenerationIdempotencyKeyError extends Error {
   constructor() {
     super('Idempotency-Key header is required for creative generation');
@@ -624,6 +671,13 @@ export class MissingCreativeReferenceGridIdempotencyKeyError extends Error {
   }
 }
 
+export class MissingCreativeReusableAssetIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for creative asset reuse');
+    this.name = 'MissingCreativeReusableAssetIdempotencyKeyError';
+  }
+}
+
 export class InvalidCreativeArchiveError extends Error {
   constructor(message: string) {
     super(message);
@@ -640,7 +694,8 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeGenerationNotConfiguredError ||
     error instanceof CreativeContinuityQcNotConfiguredError ||
     error instanceof CreativeStoryPlannerNotConfiguredError ||
-    error instanceof CreativeReferenceGridNotConfiguredError
+    error instanceof CreativeReferenceGridNotConfiguredError ||
+    error instanceof CreativeReusableAssetsNotConfiguredError
   ) {
     reply.code(503);
   } else if (error instanceof RecordNotFoundError) {
@@ -659,7 +714,9 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof MissingCreativeContinuityQcIdempotencyKeyError ||
     error instanceof MissingCreativeStoryPlanIdempotencyKeyError ||
     error instanceof MissingCreativeReferenceGridIdempotencyKeyError ||
+    error instanceof MissingCreativeReusableAssetIdempotencyKeyError ||
     error instanceof InvalidCreativeReferenceGridError ||
+    error instanceof InvalidCreativeReusableAssetError ||
     error instanceof InvalidImageGridError ||
     error instanceof CreativeReferenceGridSourceError ||
     error instanceof CreativeContinuityQcAssetError ||

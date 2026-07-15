@@ -260,6 +260,7 @@ const app = createApp({
     continuityQc: qcOrchestrator,
     storyPlanner: creativeStoryPlanner,
     referenceGrid: creativeReferenceGridProcessor,
+    reusableAssets: repositories.creative,
   },
   feishu: {
     security: {

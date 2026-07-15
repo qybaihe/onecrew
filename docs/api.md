@@ -18,6 +18,7 @@ GET /readyz
 ```text
 GET  /v1/creative/projects
 GET  /v1/creative/projects/:projectId
+GET  /v1/creative/reusable-assets
 POST /v1/creative/projects/:projectId/story-plans
 GET  /v1/creative/projects/:projectId/story-plans/:jobId
 POST /v1/creative/projects/:projectId/story-plans/:jobId/apply
@@ -27,6 +28,7 @@ POST /v1/creative/imports/onecrew/zip
 PATCH /v1/creative/episodes/:episodeId
 PATCH /v1/creative/entities/:entityId
 POST  /v1/creative/entities/:entityId/reference-grids
+POST  /v1/creative/entities/:entityId/reusable-assets
 PATCH /v1/creative/shots/:shotId
 POST  /v1/creative/shots/:shotId/generations
 POST  /v1/creative/projects/:projectId/generation-batches
@@ -197,6 +199,30 @@ curl --request POST \
 ```
 
 服务使用本机 FFmpeg 一次解码并按行优先顺序裁切，每张 PNG 都会生成内容哈希、`parentAssetId`、`reference-grid-rX-cY` 角色标记和受控 URI。资产登记、实体参考替换、版本递增与审计在同一 PostgreSQL 事务中完成。同一幂等键与相同输入会回放原结果；过期实体版本返回 409。
+
+### 搜索并复用全局素材
+
+搜索只返回数据库中已登记、未归档、使用受控 `s3://` URI 的图片类资产。可按关键词、实体类型、需排除的当前项目和数量查询：
+
+```bash
+curl 'http://127.0.0.1:3000/v1/creative/reusable-assets?q=星门&kind=scene&excludeProjectId=prj_current&limit=8'
+```
+
+结果包含资产记录、原工程名称，以及可用时的原角色/场景/道具名。复用时必须携带目标实体版本和幂等键：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/entities/scene_current/reusable-assets \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: scene-current-reuse-1' \
+  --data '{
+    "sourceAssetId": "asset_global_scene",
+    "expectedEntityVersion": 2,
+    "actorOpenId": "ou_local_studio"
+  }'
+```
+
+跨工程复用不复制媒体字节，而是在目标工程生成确定性别名资产：保留原 URI、SHA-256、许可证与 Provider/Model 信息，用 `parentAssetId` 指回来源，并在同一 PostgreSQL 事务中完成别名登记、实体绑定、版本递增和审计。这使目标工程可独立导出，同时不会修改原工程。
 
 ### 从已保存分镜生成图片或视频
 

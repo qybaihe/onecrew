@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type {
   CreativeEntity,
   CreativeGenerationBatch,
+  CreativeReusableAsset,
   CreativeStoryPlan,
   EpisodeSpec,
   JobStatus,
@@ -34,7 +35,9 @@ import {
   importCreativeArchive,
   listCreativeProjects,
   preprocessCreativeReferenceGrid,
+  reuseCreativeAsset,
   retryCreativeGenerationBatch,
+  searchCreativeReusableAssets,
   submitCreativeGenerationBatch,
   submitCreativeContinuityQc,
   submitCreativeShotGeneration,
@@ -53,6 +56,7 @@ type GenerationStatus = 'idle' | 'submitting' | JobStatus;
 type ContinuityQcStatus = 'idle' | 'submitting' | QcRunRecord['status'];
 type StoryPlanStatus = 'idle' | 'submitting' | 'applying' | 'applied' | JobStatus;
 type ReferenceGridStatus = 'idle' | 'processing' | 'done';
+type ReusableAssetStatus = 'idle' | 'searching' | 'reusing';
 
 interface GenerationState {
   status: GenerationStatus;
@@ -290,6 +294,10 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [referenceGridSourceId, setReferenceGridSourceId] = useState('');
   const [referenceGridShape, setReferenceGridShape] = useState('2x2');
   const [referenceGridTileCount, setReferenceGridTileCount] = useState(0);
+  const [reusableAssetQuery, setReusableAssetQuery] = useState('');
+  const [reusableAssets, setReusableAssets] = useState<CreativeReusableAsset[]>([]);
+  const [reusableAssetStatus, setReusableAssetStatus] = useState<ReusableAssetStatus>('idle');
+  const [reusingAssetId, setReusingAssetId] = useState('');
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
   const generationSelectionRef = useRef('');
@@ -353,6 +361,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     asset.uri.startsWith('s3://') &&
     !asset.creativeRole?.startsWith('reference-grid-'),
   );
+  const reusedSourceAssetIds = new Set(
+    versionedAssets
+      .filter((asset) => entityForm.referenceAssetIds.includes(asset.assetId) && asset.parentAssetId)
+      .map((asset) => asset.parentAssetId!),
+  );
   const selectedQcAsset = versionedAssets
     .filter((asset) =>
       asset.shotId === selectedShotId &&
@@ -390,6 +403,10 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     setReferenceGridStatus('idle');
     setReferenceGridSourceId('');
     setReferenceGridTileCount(0);
+    setReusableAssetQuery(selectedEntity?.name ?? '');
+    setReusableAssets([]);
+    setReusableAssetStatus('idle');
+    setReusingAssetId('');
   }, [selectedProjectId, selectedEntityId]);
 
   const handleImport = async (file: File | undefined) => {
@@ -899,6 +916,44 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     } catch (reason) {
       setReferenceGridStatus('idle');
       setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleReusableAssetSearch = async () => {
+    if (!selectedEntity) return;
+    setError(undefined);
+    setReusableAssetStatus('searching');
+    try {
+      setReusableAssets(await searchCreativeReusableAssets(
+        reusableAssetQuery.trim(),
+        selectedEntity.kind,
+        selectedEntity.projectId,
+      ));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setReusableAssetStatus('idle');
+    }
+  };
+
+  const handleReusableAssetApply = async (sourceAssetId: string) => {
+    if (!project || !selectedEntity) return;
+    if (entityDirty) return setError('请先保存当前素材设定，再复用全局素材。');
+    const expectedVersion = project.versions.entities[selectedEntity.entityId];
+    if (!expectedVersion) return setError('无法读取当前素材设定版本，请刷新页面。');
+    setError(undefined);
+    setReusableAssetStatus('reusing');
+    setReusingAssetId(sourceAssetId);
+    try {
+      await reuseCreativeAsset(selectedEntity.entityId, sourceAssetId, expectedVersion);
+      const latest = await getCreativeProject(selectedEntity.projectId);
+      setProject(latest);
+      setEntityForm(entityDraft(latest.bundle.entities.find((entity) => entity.entityId === selectedEntity.entityId)));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setReusableAssetStatus('idle');
+      setReusingAssetId('');
     }
   };
 
@@ -1498,6 +1553,62 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
                     </button>
                   </>
                 )}
+              </section>
+              <section className="reusable-asset-tool" aria-label="全局素材复用">
+                <div>
+                  <strong>全局素材库</strong>
+                  <span>搜索其他工程的受控素材；复用时在当前工程建立可导出、可追溯的本地别名。</span>
+                </div>
+                <div className="reusable-asset-search">
+                  <input
+                    aria-label="搜索全局素材"
+                    maxLength={200}
+                    placeholder={`搜索${entityLabels[selectedEntity.kind]}名、工程或用途`}
+                    value={reusableAssetQuery}
+                    onChange={(event) => setReusableAssetQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        void handleReusableAssetSearch();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={reusableAssetStatus !== 'idle'}
+                    onClick={() => void handleReusableAssetSearch()}
+                  >
+                    {reusableAssetStatus === 'searching' ? '搜索中…' : '搜索'}
+                  </button>
+                </div>
+                {reusableAssets.length > 0 ? (
+                  <div className="reusable-asset-results">
+                    {reusableAssets.map((item) => {
+                      const alreadyReused = reusedSourceAssetIds.has(item.asset.assetId);
+                      return (
+                        <article key={item.asset.assetId}>
+                          <div>
+                            <strong>{item.originEntity?.name ?? item.asset.creativeRole ?? item.asset.type}</strong>
+                            <small>{item.asset.creativeRole ?? item.asset.type} · {item.originProject.nameZh} · v{item.asset.version}</small>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={alreadyReused || reusableAssetStatus !== 'idle' || entityDirty}
+                            onClick={() => void handleReusableAssetApply(item.asset.assetId)}
+                          >
+                            {alreadyReused
+                              ? '已复用'
+                              : reusingAssetId === item.asset.assetId
+                                ? '复用中…'
+                                : '复用'}
+                          </button>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : reusableAssetQuery && reusableAssetStatus === 'idle' ? (
+                  <p>输入关键词后搜索，不会显示当前工程或非受控媒体。</p>
+                ) : null}
               </section>
               <fieldset className="asset-bindings">
                 <legend>绑定参考资产</legend>

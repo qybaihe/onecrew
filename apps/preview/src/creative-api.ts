@@ -4,6 +4,8 @@ import type {
   CreativeGenerationBatch,
   CreativeProjectBundle,
   CreativeReferenceGridResult,
+  CreativeReusableAsset,
+  CreativeReusableAssetReuseResult,
   CreativeStoryPlan,
   CreativeStoryPlanApplyResult,
   EpisodeSpec,
@@ -76,6 +78,15 @@ export interface CreativeStoryPlanApplyResponse {
 export interface CreativeReferenceGridResponse {
   ok: true;
   result: CreativeReferenceGridResult;
+}
+
+export interface CreativeReusableAssetSearchResponse {
+  items: CreativeReusableAsset[];
+}
+
+export interface CreativeReusableAssetReuseResponse {
+  ok: true;
+  result: CreativeReusableAssetReuseResult;
 }
 
 export interface CreativeGenerationBatchResponse {
@@ -314,6 +325,40 @@ export async function preprocessCreativeReferenceGrid(
     },
   );
   return json<CreativeReferenceGridResponse>(response);
+}
+
+export async function searchCreativeReusableAssets(
+  query: string,
+  kind: CreativeEntity['kind'],
+  excludeProjectId: string,
+): Promise<CreativeReusableAsset[]> {
+  const search = new URLSearchParams({
+    q: query,
+    kind,
+    excludeProjectId,
+    limit: '8',
+  });
+  const response = await request(`/v1/creative/reusable-assets?${search}`);
+  return (await json<CreativeReusableAssetSearchResponse>(response)).items;
+}
+
+export async function reuseCreativeAsset(
+  entityId: string,
+  sourceAssetId: string,
+  expectedEntityVersion: number,
+): Promise<CreativeReusableAssetReuseResponse> {
+  const response = await request(
+    `/v1/creative/entities/${encodeURIComponent(entityId)}/reusable-assets`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `studio_reuse_asset_${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({ sourceAssetId, expectedEntityVersion, actorOpenId: 'ou_local_studio' }),
+    },
+  );
+  return json<CreativeReusableAssetReuseResponse>(response);
 }
 
 export async function submitCreativeShotGeneration(
