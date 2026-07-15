@@ -1,4 +1,9 @@
-import { type CreativeProjectBundle, episodeSpecSchema, shotSpecSchema } from '@onecrew/contracts';
+import {
+  type CreativeProjectBundle,
+  episodeSpecSchema,
+  sceneSpecSchema,
+  shotSpecSchema,
+} from '@onecrew/contracts';
 import { VersionConflictError } from '@onecrew/domain';
 import { describe, expect, it } from 'vitest';
 
@@ -62,6 +67,9 @@ describe('creative routes', () => {
           async updateEpisode() {
             throw new Error('not used');
           },
+          async updateEntity() {
+            throw new Error('not used');
+          },
           async updateShot() {
             throw new Error('not used');
           },
@@ -116,6 +124,7 @@ describe('creative routes', () => {
     const projectId = 'prj_edit_api';
     const episodeId = 'episode_edit_api';
     const shotId = 'shot_edit_api';
+    const entityId = 'scene_edit_api';
     const episode = episodeSpecSchema.parse({
       episodeId,
       projectId,
@@ -135,7 +144,7 @@ describe('creative routes', () => {
       sequence: 1,
       durationSec: 6,
       characters: [],
-      sceneId: 'scene_edit_api',
+      sceneId: entityId,
       action: '旧动作',
       camera: '固定',
       prompt: '旧提示词',
@@ -145,8 +154,21 @@ describe('creative routes', () => {
       status: 'planned',
     });
     let episodeVersion = 1;
+    let entityVersion = 1;
     let shotVersion = 1;
     let currentEpisode = episode;
+    let currentEntity = sceneSpecSchema.parse({
+      entityId,
+      projectId,
+      episodeId,
+      kind: 'scene',
+      name: '星门',
+      location: '星门',
+      referenceAssetIds: [],
+      extraAssetIds: [],
+      sortOrder: 0,
+      status: 'draft',
+    });
     let currentShot = shot;
     const bundle: CreativeProjectBundle = {
       bundleVersion: '1.0',
@@ -165,7 +187,7 @@ describe('creative routes', () => {
         status: 'draft',
       },
       episodes: [currentEpisode],
-      entities: [],
+      entities: [currentEntity],
       shots: [currentShot],
       framePrompts: [],
       mediaFiles: [],
@@ -176,11 +198,17 @@ describe('creative routes', () => {
       creatives: {
         repository: {
           async importBundle() { throw new Error('not used'); },
-          async getBundle() { return { ...bundle, episodes: [currentEpisode], shots: [currentShot] }; },
+          async getBundle() { return { ...bundle, episodes: [currentEpisode], entities: [currentEntity], shots: [currentShot] }; },
           async listProjects() { return [bundle.project]; },
           async listAssets() { return []; },
           async getRecordVersions() {
-            return { project: 1, episodes: { [episodeId]: episodeVersion }, entities: {}, shots: { [shotId]: shotVersion }, framePrompts: {} };
+            return {
+              project: 1,
+              episodes: { [episodeId]: episodeVersion },
+              entities: { [entityId]: entityVersion },
+              shots: { [shotId]: shotVersion },
+              framePrompts: {},
+            };
           },
           async updateEpisode(id, expectedVersion, patch) {
             if (id !== episodeId) throw new Error('wrong episode');
@@ -188,6 +216,13 @@ describe('creative routes', () => {
             currentEpisode = episodeSpecSchema.parse({ ...currentEpisode, ...patch });
             episodeVersion += 1;
             return { value: currentEpisode, version: episodeVersion };
+          },
+          async updateEntity(id, expectedVersion, patch) {
+            if (id !== entityId) throw new Error('wrong entity');
+            if (expectedVersion !== entityVersion) throw new VersionConflictError(expectedVersion, entityVersion);
+            currentEntity = sceneSpecSchema.parse({ ...currentEntity, ...patch });
+            entityVersion += 1;
+            return { value: currentEntity, version: entityVersion };
           },
           async updateShot(id, expectedVersion, patch) {
             if (id !== shotId) throw new Error('wrong shot');
@@ -215,6 +250,19 @@ describe('creative routes', () => {
     });
     expect(shotResponse.statusCode).toBe(200);
     expect(shotResponse.json()).toMatchObject({ record: { action: '新动作', camera: '缓慢推进' }, version: 2 });
+
+    const entityResponse = await app.inject({
+      method: 'PATCH',
+      url: `/v1/creative/entities/${entityId}`,
+      payload: {
+        expectedVersion: 1,
+        editId: 'edit_entity_1',
+        actorOpenId: 'ou_studio',
+        patch: { name: '远古星门', location: '星海边界', atmosphere: '静谧、宏大' },
+      },
+    });
+    expect(entityResponse.statusCode).toBe(200);
+    expect(entityResponse.json()).toMatchObject({ record: { name: '远古星门', location: '星海边界' }, version: 2 });
 
     const conflict = await app.inject({
       method: 'PATCH',

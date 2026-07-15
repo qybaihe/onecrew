@@ -1,5 +1,6 @@
 import type {
   AssetRecord,
+  CreativeEntity,
   CreativeProjectBundle,
   EpisodeSpec,
   ProjectSpec,
@@ -61,6 +62,24 @@ export type ShotEditPatch = Partial<
     | 'continuity'
   >
 >;
+
+export type EntityEditPatch = Partial<{
+  name: string;
+  description: string;
+  prompt: string;
+  polishedPrompt: string;
+  negativePrompt: string;
+  referenceAssetIds: string[];
+  role: string;
+  personality: string;
+  appearance: string;
+  voiceStyle: string;
+  location: string;
+  timeOfDay: string;
+  atmosphere: string;
+  lightingStyle: string;
+  category: string;
+}>;
 
 async function json<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -146,6 +165,19 @@ export async function updateCreativeShot(
     body: JSON.stringify({ ...editContext(expectedVersion), patch }),
   });
   return json<CreativeEditResponse<ShotSpec>>(response);
+}
+
+export async function updateCreativeEntity(
+  entityId: string,
+  expectedVersion: number,
+  patch: EntityEditPatch,
+): Promise<CreativeEditResponse<CreativeEntity>> {
+  const response = await request(`/v1/creative/entities/${encodeURIComponent(entityId)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...editContext(expectedVersion), patch }),
+  });
+  return json<CreativeEditResponse<CreativeEntity>>(response);
 }
 
 export async function downloadCreativeProject(projectId: string): Promise<void> {

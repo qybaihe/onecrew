@@ -22,6 +22,7 @@ POST /v1/creative/imports/local-mini-drama/json
 POST /v1/creative/imports/local-mini-drama/zip
 POST /v1/creative/imports/onecrew/zip
 PATCH /v1/creative/episodes/:episodeId
+PATCH /v1/creative/entities/:entityId
 PATCH /v1/creative/shots/:shotId
 GET  /v1/creative/projects/:projectId/exports/onecrew.zip
 GET  /v1/creative/projects/:projectId/exports/compatible.zip
@@ -64,9 +65,9 @@ curl --request POST \
 
 原生包必须包含 `onecrew-project.json`。导入会校验声明文件、唯一路径、解压限额和每个媒体的 SHA-256，并拒绝任何未声明文件。原生导入保留工程 ID，如数据库中已存在同 ID 项目则返回 409。
 
-### 编辑剧集和分镜
+### 编辑剧集、素材设定和分镜
 
-两个 PATCH 端点都要求当前 `expectedVersion`、每次操作唯一的 `editId` 和 `actorOpenId`。剧集例子：
+三个 PATCH 端点都要求当前 `expectedVersion`、每次操作唯一的 `editId` 和 `actorOpenId`。剧集例子：
 
 ```bash
 curl --request PATCH \
@@ -80,6 +81,27 @@ curl --request PATCH \
       "title": "第一集：星门开启",
       "scriptContent": "角色跨过星门。",
       "durationSec": 36
+    }
+  }'
+```
+
+角色、场景和道具共用素材设定端点。补丁会按实体的实际类型校验，并可绑定当前项目的版本化资产。场景例子：
+
+```bash
+curl --request PATCH \
+  http://127.0.0.1:3000/v1/creative/entities/scene_demo_01 \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "expectedVersion": 1,
+    "editId": "studio_edit_scene_001",
+    "actorOpenId": "ou_local_studio",
+    "patch": {
+      "name": "远古星门",
+      "description": "悬浮在星海边界的巨型建筑。",
+      "location": "星海边界",
+      "timeOfDay": "深夜",
+      "atmosphere": "静谧、宏大",
+      "referenceAssetIds": ["asset_scene_reference_01"]
     }
   }'
 ```

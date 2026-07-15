@@ -8,6 +8,7 @@ import { createDatabase } from '../src/client.js';
 import {
   createRepositories,
   IdempotencyConflictError,
+  InvalidCreativeAssetBindingError,
 } from '../src/repositories.js';
 import { auditLogs } from '../src/schema.js';
 
@@ -155,6 +156,24 @@ describe('PostgreSQL repositories', () => {
       { editId: `edit_shot_${suffix}`, actorOpenId: 'ou_studio_editor' },
     );
     expect(editedShot).toMatchObject({ value: { action: '角色跨过星门。', camera: '缓慢跟拍' }, version: 2 });
+    const editedEntity = await repositories.creative.updateEntity(
+      sceneId,
+      1,
+      { name: '远古星门', atmosphere: '静谧而宏大', referenceAssetIds: [assetId] },
+      { editId: `edit_entity_${suffix}`, actorOpenId: 'ou_studio_editor' },
+    );
+    expect(editedEntity).toMatchObject({
+      value: { kind: 'scene', name: '远古星门', referenceAssetIds: [assetId] },
+      version: 2,
+    });
+    await expect(
+      repositories.creative.updateEntity(
+        sceneId,
+        2,
+        { referenceAssetIds: [`asset_outside_${suffix}`] },
+        { editId: `edit_entity_invalid_asset_${suffix}`, actorOpenId: 'ou_studio_editor' },
+      ),
+    ).rejects.toBeInstanceOf(InvalidCreativeAssetBindingError);
     await expect(
       repositories.creative.updateShot(
         shotId,
@@ -167,7 +186,11 @@ describe('PostgreSQL repositories', () => {
       .select()
       .from(auditLogs)
       .where(eq(auditLogs.projectId, projectId));
-    expect(creativeAudit.map((row) => row.action).sort()).toEqual(['update_episode', 'update_shot']);
+    expect(creativeAudit.map((row) => row.action).sort()).toEqual([
+      'update_creative_entity',
+      'update_episode',
+      'update_shot',
+    ]);
     expect(creativeAudit.every((row) => row.source === 'creative_studio' && row.outcome === 'accepted')).toBe(true);
   });
 

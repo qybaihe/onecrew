@@ -7,8 +7,14 @@ import {
   materializeCreativeArchive,
   materializeOneCrewArchive,
 } from '@onecrew/creative';
-import { episodeSpecSchema, shotSpecSchema } from '@onecrew/contracts';
-import { RecordNotFoundError, type CreativeRepository } from '@onecrew/db';
+import {
+  characterSpecSchema,
+  episodeSpecSchema,
+  propSpecSchema,
+  sceneSpecSchema,
+  shotSpecSchema,
+} from '@onecrew/contracts';
+import { InvalidCreativeAssetBindingError, RecordNotFoundError, type CreativeRepository } from '@onecrew/db';
 import { VersionConflictError } from '@onecrew/domain';
 import type { S3MediaStore } from '@onecrew/media';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -22,6 +28,7 @@ export interface CreativeRouteOptions {
     | 'getRecordVersions'
     | 'listProjects'
     | 'listAssets'
+    | 'updateEntity'
     | 'updateEpisode'
     | 'updateShot'
   >;
@@ -56,6 +63,25 @@ const shotPatchSchema = shotSpecSchema
 
 const episodeEditSchema = editContextSchema.extend({ patch: episodePatchSchema });
 const shotEditSchema = editContextSchema.extend({ patch: shotPatchSchema });
+
+const entityPatchSchema = z.union([
+  characterSpecSchema
+    .omit({ entityId: true, projectId: true, episodeId: true, kind: true })
+    .partial()
+    .strict()
+    .refine((patch) => Object.keys(patch).length > 0, { message: 'Entity patch must change at least one field' }),
+  sceneSpecSchema
+    .omit({ entityId: true, projectId: true, episodeId: true, kind: true })
+    .partial()
+    .strict()
+    .refine((patch) => Object.keys(patch).length > 0, { message: 'Entity patch must change at least one field' }),
+  propSpecSchema
+    .omit({ entityId: true, projectId: true, episodeId: true, kind: true })
+    .partial()
+    .strict()
+    .refine((patch) => Object.keys(patch).length > 0, { message: 'Entity patch must change at least one field' }),
+]);
+const entityEditSchema = editContextSchema.extend({ patch: entityPatchSchema });
 
 export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeRouteOptions): void {
   app.get('/v1/creative/projects', async (_request, reply) => {
@@ -186,6 +212,23 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
     }
   });
 
+  app.patch('/v1/creative/entities/:entityId', async (request, reply) => {
+    if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
+    try {
+      const { entityId } = request.params as { entityId: string };
+      const input = entityEditSchema.parse(request.body);
+      const record = await options.repository.updateEntity(
+        entityId,
+        input.expectedVersion,
+        input.patch,
+        { editId: input.editId, actorOpenId: input.actorOpenId },
+      );
+      return { ok: true, record: record.value, version: record.version };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
   app.get('/v1/creative/projects/:projectId/exports/onecrew.zip', async (request, reply) => {
     if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
     if (!options.mediaStore) return creativeError(reply, new CreativeMediaStoreNotConfiguredError());
@@ -263,6 +306,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
     reply.code(409);
   } else if (
     error instanceof ZodError ||
+    error instanceof InvalidCreativeAssetBindingError ||
     error instanceof InvalidCreativeArchiveError ||
     /LocalMiniDrama|Archive|project\.json|declared media file|archive root|absolute path/i.test(message)
   ) {

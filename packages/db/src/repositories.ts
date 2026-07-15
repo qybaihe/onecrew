@@ -1,5 +1,6 @@
 import {
   assetRecordSchema,
+  characterSpecSchema,
   creativeEntitySchema,
   creativeProjectBundleSchema,
   episodeSpecSchema,
@@ -17,6 +18,8 @@ import {
   qcRunRecordSchema,
   publishRecordSchema,
   renderRecordSchema,
+  propSpecSchema,
+  sceneSpecSchema,
   shotSpecSchema,
   type AssetRecord,
   type AssetStatus,
@@ -97,6 +100,13 @@ export class IdempotencyConflictError extends Error {
   }
 }
 
+export class InvalidCreativeAssetBindingError extends Error {
+  constructor(readonly assetIds: string[]) {
+    super(`Creative entity references assets outside its project: ${assetIds.join(', ')}`);
+    this.name = 'InvalidCreativeAssetBindingError';
+  }
+}
+
 export interface Versioned<T> {
   value: T;
   version: number;
@@ -104,7 +114,7 @@ export interface Versioned<T> {
 
 async function currentVersionOrThrow(
   db: OneCrewDatabase,
-  entity: 'project' | 'episode' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
   id: string,
 ): Promise<number> {
   if (entity === 'project') {
@@ -113,6 +123,13 @@ async function currentVersionOrThrow(
   }
   if (entity === 'episode') {
     const [row] = await db.select({ version: episodes.version }).from(episodes).where(eq(episodes.episodeId, id));
+    if (row) return row.version;
+  }
+  if (entity === 'creative_entity') {
+    const [row] = await db
+      .select({ version: creativeEntities.version })
+      .from(creativeEntities)
+      .where(eq(creativeEntities.entityId, id));
     if (row) return row.version;
   }
   if (entity === 'shot') {
@@ -147,7 +164,7 @@ async function currentVersionOrThrow(
 
 async function throwVersionConflict(
   db: OneCrewDatabase,
-  entity: 'project' | 'episode' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
   id: string,
   expectedVersion: number,
 ): Promise<never> {
@@ -459,6 +476,70 @@ export class CreativeRepository {
         details: { changedFields: Object.keys(patch), version: row.version },
       });
       return { value: shotSpecSchema.parse(row.spec), version: row.version };
+    });
+  }
+
+  async updateEntity(
+    entityId: string,
+    expectedVersion: number,
+    patch: Record<string, unknown>,
+    context: CreativeEditContext,
+  ): Promise<Versioned<CreativeEntity>> {
+    const [currentRow] = await this.db.select().from(creativeEntities).where(eq(creativeEntities.entityId, entityId));
+    if (!currentRow) throw new RecordNotFoundError('creative_entity', entityId);
+    assertExpectedVersion(expectedVersion, currentRow.version);
+    const current = creativeEntitySchema.parse(currentRow.spec);
+    const candidate = {
+      ...current,
+      ...patch,
+      entityId: current.entityId,
+      projectId: current.projectId,
+      episodeId: current.episodeId,
+      kind: current.kind,
+    };
+    const next = current.kind === 'character'
+      ? characterSpecSchema.strict().parse(candidate)
+      : current.kind === 'scene'
+        ? sceneSpecSchema.strict().parse(candidate)
+        : propSpecSchema.strict().parse(candidate);
+    if (patch.referenceAssetIds !== undefined && next.referenceAssetIds.length > 0) {
+      const boundAssets = await this.db
+        .select({ assetId: assets.assetId, projectId: assets.projectId })
+        .from(assets)
+        .where(inArray(assets.assetId, next.referenceAssetIds));
+      const validAssetIds = new Set(
+        boundAssets.filter((asset) => asset.projectId === current.projectId).map((asset) => asset.assetId),
+      );
+      const invalidAssetIds = next.referenceAssetIds.filter((assetId) => !validAssetIds.has(assetId));
+      if (invalidAssetIds.length > 0) throw new InvalidCreativeAssetBindingError(invalidAssetIds);
+    }
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(creativeEntities)
+        .set({
+          spec: next,
+          name: next.name,
+          status: next.status,
+          version: expectedVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(creativeEntities.entityId, entityId), eq(creativeEntities.version, expectedVersion)))
+        .returning();
+      if (!row) return throwVersionConflict(this.db, 'creative_entity', entityId, expectedVersion);
+      await tx.insert(auditLogs).values({
+        auditId: `audit_${createInputHash({ editId: context.editId, action: 'update_creative_entity', entityId }).slice(0, 32)}`,
+        source: 'creative_studio',
+        eventId: context.editId,
+        projectId: current.projectId,
+        actorOpenId: context.actorOpenId,
+        action: 'update_creative_entity',
+        targetType: current.kind,
+        targetId: entityId,
+        expectedVersion,
+        outcome: 'accepted',
+        details: { changedFields: Object.keys(patch), version: row.version },
+      });
+      return { value: creativeEntitySchema.parse(row.spec), version: row.version };
     });
   }
 

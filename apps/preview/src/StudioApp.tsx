@@ -16,6 +16,7 @@ import {
   getCreativeProject,
   importCreativeArchive,
   listCreativeProjects,
+  updateCreativeEntity,
   updateCreativeEpisode,
   updateCreativeShot,
   type CreativeProjectResponse,
@@ -45,6 +46,16 @@ interface ShotDraft {
   continuityNotes: string;
 }
 
+interface EntityDraft {
+  name: string;
+  description: string;
+  prompt: string;
+  referenceAssetIds: string[];
+  detailOne: string;
+  detailTwo: string;
+  detailThree: string;
+}
+
 function episodeDraft(episode: EpisodeSpec | undefined): EpisodeDraft {
   return {
     title: episode?.title ?? '',
@@ -69,6 +80,43 @@ function shotDraft(shot: ShotSpec | undefined): ShotDraft {
   };
 }
 
+function entityDraft(entity: CreativeEntity | undefined): EntityDraft {
+  if (!entity) {
+    return { name: '', description: '', prompt: '', referenceAssetIds: [], detailOne: '', detailTwo: '', detailThree: '' };
+  }
+  if (entity.kind === 'character') {
+    return {
+      name: entity.name,
+      description: entity.description ?? '',
+      prompt: entity.prompt ?? '',
+      referenceAssetIds: entity.referenceAssetIds,
+      detailOne: entity.role ?? '',
+      detailTwo: entity.personality ?? '',
+      detailThree: entity.appearance ?? '',
+    };
+  }
+  if (entity.kind === 'scene') {
+    return {
+      name: entity.name,
+      description: entity.description ?? '',
+      prompt: entity.prompt ?? '',
+      referenceAssetIds: entity.referenceAssetIds,
+      detailOne: entity.location,
+      detailTwo: entity.timeOfDay ?? '',
+      detailThree: entity.atmosphere ?? '',
+    };
+  }
+  return {
+    name: entity.name,
+    description: entity.description ?? '',
+    prompt: entity.prompt ?? '',
+    referenceAssetIds: entity.referenceAssetIds,
+    detailOne: entity.category ?? '',
+    detailTwo: '',
+    detailThree: '',
+  };
+}
+
 export interface StudioAppProps {
   onOpenReview(): void;
 }
@@ -77,6 +125,12 @@ const entityLabels: Record<CreativeEntity['kind'], string> = {
   character: '角色',
   scene: '场景',
   prop: '道具',
+};
+
+const entityDetailLabels: Record<CreativeEntity['kind'], [string, string, string]> = {
+  character: ['角色定位', '性格', '外观锚点'],
+  scene: ['地点', '时间', '氛围'],
+  prop: ['分类', '', ''],
 };
 
 function flowGraph(shots: ShotSpec[], selectedShotId: string | undefined): { nodes: Node[]; edges: Edge[] } {
@@ -112,14 +166,17 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [project, setProject] = useState<CreativeProjectResponse>();
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string>();
   const [selectedShotId, setSelectedShotId] = useState<string>();
+  const [selectedEntityId, setSelectedEntityId] = useState<string>();
   const [view, setView] = useState<StudioView>('storyboards');
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [episodeSave, setEpisodeSave] = useState<SaveState>('idle');
   const [shotSave, setShotSave] = useState<SaveState>('idle');
+  const [entitySave, setEntitySave] = useState<SaveState>('idle');
   const [episodeForm, setEpisodeForm] = useState<EpisodeDraft>(() => episodeDraft(undefined));
   const [shotForm, setShotForm] = useState<ShotDraft>(() => shotDraft(undefined));
+  const [entityForm, setEntityForm] = useState<EntityDraft>(() => entityDraft(undefined));
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -149,12 +206,14 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
         setProject(result);
         setSelectedEpisodeId(result.bundle.episodes[0]?.episodeId);
         setSelectedShotId(result.bundle.shots[0]?.shotId);
+        setSelectedEntityId(result.bundle.entities[0]?.entityId);
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
       .finally(() => setLoading(false));
   }, [selectedProjectId]);
 
   const bundle = project?.bundle;
+  const versionedAssets = project?.assets ?? [];
   const episodes = bundle?.episodes ?? [];
   const entities = bundle?.entities ?? [];
   const episodeShots = useMemo(
@@ -163,6 +222,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   );
   const selectedShot = (bundle?.shots ?? []).find((shot) => shot.shotId === selectedShotId);
   const selectedEpisode = episodes.find((episode) => episode.episodeId === selectedEpisodeId);
+  const selectedEntity = entities.find((entity) => entity.entityId === selectedEntityId);
   const graph = useMemo(() => flowGraph(episodeShots, selectedShotId), [episodeShots, selectedShotId]);
 
   useEffect(() => {
@@ -174,6 +234,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     setShotForm(shotDraft(selectedShot));
     setShotSave('idle');
   }, [selectedProjectId, selectedShotId]);
+
+  useEffect(() => {
+    setEntityForm(entityDraft(selectedEntity));
+    setEntitySave('idle');
+  }, [selectedProjectId, selectedEntityId]);
 
   const handleImport = async (file: File | undefined) => {
     if (!file) return;
@@ -211,6 +276,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   function changeShotField<Field extends keyof ShotDraft>(field: Field, value: ShotDraft[Field]) {
     setShotForm((draft) => ({ ...draft, [field]: value }));
     setShotSave('idle');
+  }
+
+  function changeEntityField<Field extends keyof EntityDraft>(field: Field, value: EntityDraft[Field]) {
+    setEntityForm((draft) => ({ ...draft, [field]: value }));
+    setEntitySave('idle');
   }
 
   const handleEpisodeSave = async (event: FormEvent<HTMLFormElement>) => {
@@ -288,6 +358,49 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
       if (latest) {
         setProject(latest);
         setShotForm(shotDraft(latest.bundle.shots.find((shot) => shot.shotId === selectedShot.shotId)));
+      }
+    }
+  };
+
+  const handleEntitySave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!project || !selectedEntity) return;
+    const expectedVersion = project.versions.entities[selectedEntity.entityId];
+    if (!expectedVersion) return setError('无法读取当前素材设定版本，请刷新页面。');
+    const common = {
+      name: entityForm.name.trim(),
+      description: entityForm.description,
+      prompt: entityForm.prompt,
+      referenceAssetIds: entityForm.referenceAssetIds,
+    };
+    const details = selectedEntity.kind === 'character'
+      ? { role: entityForm.detailOne, personality: entityForm.detailTwo, appearance: entityForm.detailThree }
+      : selectedEntity.kind === 'scene'
+        ? { location: entityForm.detailOne.trim(), timeOfDay: entityForm.detailTwo, atmosphere: entityForm.detailThree }
+        : { category: entityForm.detailOne };
+    setEntitySave('saving');
+    setError(undefined);
+    try {
+      const result = await updateCreativeEntity(selectedEntity.entityId, expectedVersion, { ...common, ...details });
+      setProject((current) => current ? {
+        ...current,
+        bundle: {
+          ...current.bundle,
+          entities: current.bundle.entities.map((entity) => entity.entityId === result.record.entityId ? result.record : entity),
+        },
+        versions: {
+          ...current.versions,
+          entities: { ...current.versions.entities, [result.record.entityId]: result.version },
+        },
+      } : current);
+      setEntitySave('saved');
+    } catch (reason) {
+      setEntitySave('idle');
+      setError(`${reason instanceof Error ? reason.message : String(reason)}；已重新读取服务端版本。`);
+      const latest = await getCreativeProject(selectedEntity.projectId).catch(() => undefined);
+      if (latest) {
+        setProject(latest);
+        setEntityForm(entityDraft(latest.bundle.entities.find((entity) => entity.entityId === selectedEntity.entityId)));
       }
     }
   };
@@ -553,7 +666,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
         <aside className="asset-panel" aria-label="创作素材库">
           <div className="asset-panel-heading">
             <div><div className="studio-eyebrow">ASSET LIBRARY</div><h2>素材库</h2></div>
-            <span>{entities.length}</span>
+            <span title={`${entities.length} 个设定实体`}>{project?.assets.length ?? 0}</span>
           </div>
           <div className="entity-groups">
             {(['character', 'scene', 'prop'] as const).map((kind) => {
@@ -562,16 +675,100 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
                 <section key={kind} className="entity-group">
                   <h3>{entityLabels[kind]} <span>{items.length}</span></h3>
                   {items.map((entity) => (
-                    <article key={entity.entityId} className="entity-card">
+                    <button
+                      key={entity.entityId}
+                      type="button"
+                      className={selectedEntityId === entity.entityId ? 'entity-card selected' : 'entity-card'}
+                      onClick={() => setSelectedEntityId(entity.entityId)}
+                    >
                       <div className={`entity-icon ${kind}`} aria-hidden="true">{kind === 'character' ? '人' : kind === 'scene' ? '景' : '物'}</div>
                       <div><strong>{entity.name}</strong><p>{entity.description ?? entity.prompt ?? '等待补充设定'}</p></div>
                       <span className="entity-assets">{entity.referenceAssetIds.length + entity.extraAssetIds.length}</span>
-                    </article>
+                    </button>
                   ))}
                 </section>
               );
             })}
           </div>
+
+          {selectedEntity && (
+            <form className="entity-editor" aria-label="当前素材设定编辑" onSubmit={(event) => void handleEntitySave(event)}>
+              <div className="editor-heading">
+                <div>
+                  <span>{selectedEntity.kind.toUpperCase()} / EDITOR</span>
+                  <strong>{entityLabels[selectedEntity.kind]}设定</strong>
+                </div>
+                <small>v{project?.versions.entities[selectedEntity.entityId] ?? '—'}</small>
+              </div>
+              <label>
+                <span>名称</span>
+                <input required maxLength={300} value={entityForm.name} onChange={(event) => changeEntityField('name', event.target.value)} />
+              </label>
+              <label>
+                <span>描述</span>
+                <textarea rows={3} maxLength={10_000} value={entityForm.description} onChange={(event) => changeEntityField('description', event.target.value)} />
+              </label>
+              <label>
+                <span>生成提示词</span>
+                <textarea rows={4} maxLength={20_000} value={entityForm.prompt} onChange={(event) => changeEntityField('prompt', event.target.value)} />
+              </label>
+              <label>
+                <span>{entityDetailLabels[selectedEntity.kind][0]}</span>
+                <input
+                  required={selectedEntity.kind === 'scene'}
+                  maxLength={selectedEntity.kind === 'scene' ? 500 : 2_000}
+                  value={entityForm.detailOne}
+                  onChange={(event) => changeEntityField('detailOne', event.target.value)}
+                />
+              </label>
+              {entityDetailLabels[selectedEntity.kind][1] && (
+                <label>
+                  <span>{entityDetailLabels[selectedEntity.kind][1]}</span>
+                  <textarea rows={2} maxLength={4_000} value={entityForm.detailTwo} onChange={(event) => changeEntityField('detailTwo', event.target.value)} />
+                </label>
+              )}
+              {entityDetailLabels[selectedEntity.kind][2] && (
+                <label>
+                  <span>{entityDetailLabels[selectedEntity.kind][2]}</span>
+                  <textarea rows={3} maxLength={10_000} value={entityForm.detailThree} onChange={(event) => changeEntityField('detailThree', event.target.value)} />
+                </label>
+              )}
+              <fieldset className="asset-bindings">
+                <legend>绑定参考资产</legend>
+                {versionedAssets.length === 0 ? (
+                  <p>当前项目还没有可绑定的版本资产。</p>
+                ) : versionedAssets.map((asset) => (
+                  <label key={asset.assetId}>
+                    <input
+                      type="checkbox"
+                      checked={entityForm.referenceAssetIds.includes(asset.assetId)}
+                      onChange={(event) => changeEntityField(
+                        'referenceAssetIds',
+                        event.target.checked
+                          ? [...new Set([...entityForm.referenceAssetIds, asset.assetId])]
+                          : entityForm.referenceAssetIds.filter((assetId) => assetId !== asset.assetId),
+                      )}
+                    />
+                    <span><strong>{asset.creativeRole ?? asset.type}</strong><small>{asset.provider} · v{asset.version}</small></span>
+                  </label>
+                ))}
+              </fieldset>
+              <button className="entity-save" type="submit" disabled={entitySave === 'saving'}>
+                {entitySave === 'saving' ? '保存中…' : entitySave === 'saved' ? '已保存 ✓' : '保存素材设定'}
+              </button>
+            </form>
+          )}
+
+          <section className="asset-records" aria-label="版本资产记录">
+            <h3>版本资产 <span>{project?.assets.length ?? 0}</span></h3>
+            {(project?.assets ?? []).map((asset) => (
+              <article key={asset.assetId} title={asset.assetId}>
+                <span>{asset.type}</span>
+                <strong>{asset.creativeRole ?? `${asset.type} asset`}</strong>
+                <small>{asset.provider} · v{asset.version} · {asset.status}</small>
+              </article>
+            ))}
+          </section>
         </aside>
       </main>
     </div>
