@@ -20,6 +20,9 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Install media tooling
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+
       - run: cp .env.example .env
       - run: pnpm install --frozen-lockfile
       - run: pnpm readme:check
