@@ -3,7 +3,9 @@ import {
   assetRecordSchema,
   creativeGenerationBatchSchema,
   creativeProjectBundleSchema,
+  creativeWorkflowGroupSchema,
   projectSpecSchema,
+  shotSpecSchema,
 } from '@onecrew/contracts';
 import { createInputHash, InvalidStateTransitionError, VersionConflictError } from '@onecrew/domain';
 import { eq } from 'drizzle-orm';
@@ -14,6 +16,7 @@ import {
   createRepositories,
   IdempotencyConflictError,
   InvalidCreativeAssetBindingError,
+  InvalidCreativeWorkflowGroupError,
 } from '../src/repositories.js';
 import { auditLogs } from '../src/schema.js';
 
@@ -27,6 +30,111 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL repositories', () => {
+  it('persists reusable shot workflow groups and links their latest generation batch', async () => {
+    const projectId = `prj_workflow_group_${suffix}`;
+    const foreignProjectId = `prj_workflow_group_foreign_${suffix}`;
+    const shotIds = [`shot_workflow_group_a_${suffix}`, `shot_workflow_group_b_${suffix}`];
+    const foreignShotId = `shot_workflow_group_foreign_${suffix}`;
+    const makeProject = (id: string) => projectSpecSchema.parse({
+      projectId: id,
+      nameZh: id === projectId ? '镜头工作流组测试' : '外部工程',
+      nameEn: id,
+      synopsis: '验证镜头组持久化、续跑与项目边界。',
+      audience: '开发测试',
+      genres: ['test'],
+      ownerOpenId: 'ou_workflow_group_owner',
+      locales: ['zh-CN'],
+      aspectRatios: ['16:9'],
+      budgetLimitCny: 1,
+      status: 'draft',
+    });
+    await repositories.projects.create(makeProject(projectId));
+    await repositories.projects.create(makeProject(foreignProjectId));
+    const makeShot = (shotId: string, ownerProjectId: string, sequence: number) => shotSpecSchema.parse({
+      shotId,
+      projectId: ownerProjectId,
+      episodeId: `episode_${ownerProjectId}`,
+      sequence,
+      durationSec: 6,
+      characters: [],
+      sceneId: `scene_${ownerProjectId}`,
+      action: `镜头 ${sequence}`,
+      camera: '固定',
+      prompt: `shot ${sequence}`,
+      referenceAssetIds: [],
+      importance: 'normal',
+      closeupDialogue: false,
+      status: 'planned',
+    });
+    await repositories.shots.create(makeShot(shotIds[0]!, projectId, 1));
+    await repositories.shots.create(makeShot(shotIds[1]!, projectId, 2));
+    await repositories.shots.create(makeShot(foreignShotId, foreignProjectId, 1));
+
+    const now = new Date().toISOString();
+    const group = creativeWorkflowGroupSchema.parse({
+      groupId: `group_workflow_${suffix}`,
+      projectId,
+      name: '主线动作镜头',
+      description: '只补齐缺失的主线镜头素材。',
+      shotIds,
+      generationKind: 'image',
+      missingOnly: true,
+      concurrency: 2,
+      createdBy: 'ou_workflow_group_editor',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await expect(repositories.creativeWorkflowGroups.create(group)).resolves.toMatchObject({
+      value: { groupId: group.groupId, shotIds },
+      version: 1,
+      replayed: false,
+    });
+    await expect(repositories.creativeWorkflowGroups.create(group)).resolves.toMatchObject({
+      version: 1,
+      replayed: true,
+    });
+    await expect(repositories.creativeWorkflowGroups.create({ ...group, name: '复用冲突' }))
+      .rejects.toBeInstanceOf(IdempotencyConflictError);
+    await expect(repositories.creativeWorkflowGroups.create({
+      ...group,
+      groupId: `group_workflow_invalid_${suffix}`,
+      name: '跨项目镜头',
+      shotIds: [foreignShotId],
+    })).rejects.toBeInstanceOf(InvalidCreativeWorkflowGroupError);
+
+    const batch = creativeGenerationBatchSchema.parse({
+      batchId: `batch_workflow_${suffix}`,
+      projectId,
+      kind: 'image',
+      status: 'running',
+      missingOnly: true,
+      route: 'primary',
+      generationNonce: 1,
+      concurrency: 2,
+      items: shotIds.map((shotId) => ({
+        shotId,
+        expectedVersion: 1,
+        status: 'queued' as const,
+        outputAssetIds: [],
+        retryCount: 0,
+      })),
+      inputHash: createInputHash({ projectId, shotIds }),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await repositories.creativeGenerationBatches.create(batch, `workflow_batch_${suffix}`);
+    const attached = await repositories.creativeWorkflowGroups.attachBatch(group.groupId, 1, batch.batchId);
+    expect(attached).toMatchObject({
+      value: { groupId: group.groupId, lastBatchId: batch.batchId },
+      version: 2,
+    });
+    await expect(repositories.creativeWorkflowGroups.attachBatch(group.groupId, 1, batch.batchId))
+      .rejects.toBeInstanceOf(VersionConflictError);
+    await expect(repositories.creativeWorkflowGroups.listForProject(projectId)).resolves.toEqual([
+      expect.objectContaining({ value: expect.objectContaining({ groupId: group.groupId }), version: 2 }),
+    ]);
+  });
+
   it('searches controlled assets globally and reuses one through a project-local lineage alias', async () => {
     const originProjectId = `prj_library_origin_${suffix}`;
     const targetProjectId = `prj_library_target_${suffix}`;

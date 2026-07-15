@@ -207,6 +207,35 @@
 .story-plan-apply small { overflow: hidden; color: var(--muted); font: 0.56rem ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .story-plan-apply button { flex: 0 0 auto; min-width: 12rem; }
 
+.workflow-groups { margin-top: 1.25rem; padding: 1rem; background: oklch(0.18 0.045 245 / 0.84); border: 1px solid oklch(0.66 0.12 190 / 0.3); border-radius: 0.85rem; }
+.workflow-groups-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.workflow-groups-heading > div:first-child > span { color: var(--amber); font: 0.58rem ui-monospace, monospace; letter-spacing: 0.12em; }
+.workflow-groups-heading strong { margin-top: 0.28rem; display: block; font-size: 0.88rem; }
+.workflow-groups-heading p { max-width: 46rem; margin: 0.3rem 0 0; color: var(--muted); font-size: 0.63rem; line-height: 1.55; }
+.workflow-selection-tools { flex: 0 0 auto; display: flex; align-items: center; gap: 0.4rem; }
+.workflow-selection-tools small { margin-right: 0.25rem; color: var(--teal); font: 0.58rem ui-monospace, monospace; }
+.workflow-selection-tools button, .workflow-group-actions button { min-height: 2.2rem; padding: 0 0.65rem; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 0.5rem; font-size: 0.6rem; font-weight: 700; cursor: pointer; }
+.workflow-selection-tools button:hover:not(:disabled), .workflow-group-actions button:hover:not(:disabled) { border-color: var(--teal); }
+.workflow-selection-tools button:disabled, .workflow-group-actions button:disabled { cursor: not-allowed; opacity: 0.48; }
+.workflow-group-form { margin-top: 0.9rem; padding-top: 0.9rem; display: grid; grid-template-columns: minmax(10rem, 1fr) 8rem auto 9rem; align-items: end; gap: 0.6rem; border-top: 1px solid var(--line); }
+.workflow-group-form > label:not(.workflow-missing-only) { min-width: 0; display: grid; gap: 0.32rem; }
+.workflow-group-form label > span { color: var(--muted); font-size: 0.6rem; }
+.workflow-group-form input:not([type="checkbox"]), .workflow-group-form select { width: 100%; min-height: 2.55rem; padding: 0 0.7rem; color: var(--ink); background: oklch(0.13 0.035 250 / 0.76); border: 1px solid var(--line); border-radius: 0.52rem; font: inherit; font-size: 0.67rem; }
+.workflow-group-form input:focus, .workflow-group-form select:focus { outline: 0; border-color: var(--teal); }
+.workflow-missing-only { min-height: 2.55rem; padding: 0 0.7rem; display: flex; align-items: center; gap: 0.45rem; background: oklch(0.15 0.035 250 / 0.62); border: 1px solid var(--line); border-radius: 0.52rem; cursor: pointer; }
+.workflow-missing-only input { accent-color: var(--teal); }
+.workflow-group-form > button { min-height: 2.55rem; padding: 0 0.8rem; color: oklch(0.13 0.03 245); background: var(--teal); border: 0; border-radius: 0.52rem; font-size: 0.66rem; font-weight: 800; cursor: pointer; }
+.workflow-group-form > button:disabled { cursor: not-allowed; opacity: 0.48; }
+.workflow-group-list { margin-top: 0.8rem; display: grid; gap: 0.5rem; }
+.workflow-group-list article { padding: 0.7rem 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; background: oklch(0.145 0.035 250 / 0.7); border: 1px solid var(--line); border-radius: 0.6rem; }
+.workflow-group-list article > div:first-child { min-width: 0; }
+.workflow-group-list article span, .workflow-group-list article strong, .workflow-group-list article small { display: block; }
+.workflow-group-list article span { color: var(--teal); font: 0.54rem ui-monospace, monospace; }
+.workflow-group-list article strong { margin-top: 0.2rem; font-size: 0.72rem; }
+.workflow-group-list article small { margin-top: 0.24rem; overflow: hidden; color: var(--muted); font: 0.55rem ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-group-actions { flex: 0 0 auto; display: flex; gap: 0.4rem; }
+.workflow-group-actions button:last-child { color: var(--amber); border-color: oklch(0.84 0.17 84 / 0.32); }
+
 .batch-generation { margin-top: 1.25rem; padding: 0.9rem; display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.8fr); align-items: center; gap: 0.85rem; background: linear-gradient(120deg, oklch(0.2 0.055 225 / 0.88), oklch(0.16 0.04 248 / 0.82)); border: 1px solid oklch(0.58 0.1 195 / 0.32); border-radius: 0.8rem; }
 .batch-generation-copy > span { color: var(--teal); font: 0.58rem ui-monospace, monospace; letter-spacing: 0.1em; }
 .batch-generation-copy > strong { margin-top: 0.28rem; display: block; font-size: 0.86rem; }
@@ -225,6 +254,13 @@
 .batch-generation-controls button { min-height: 2.2rem; background: transparent; font-size: 0.61rem; font-weight: 600; }
 
 .shot-list { margin-top: 1.25rem; display: grid; gap: 0.55rem; }
+.shot-card-row { min-width: 0; display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); align-items: stretch; gap: 0.45rem; }
+.shot-group-select { display: grid; place-items: center; color: var(--muted); background: oklch(0.18 0.04 248 / 0.72); border: 1px solid var(--line); border-radius: 0.72rem; cursor: pointer; transition: 160ms ease-out; }
+.shot-group-select:hover { color: var(--teal); border-color: oklch(0.72 0.13 185 / 0.55); }
+.shot-group-select input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.shot-group-select span { width: 1.25rem; height: 1.25rem; display: grid; place-items: center; color: transparent; border: 1px solid var(--line); border-radius: 0.35rem; font-size: 0.72rem; font-weight: 900; }
+.shot-group-select input:checked + span { color: oklch(0.13 0.03 245); background: var(--teal); border-color: var(--teal); }
+.shot-group-select:focus-within { outline: 2px solid var(--teal); outline-offset: 2px; }
 .shot-card {
   width: 100%;
   min-height: 5rem;
@@ -389,6 +425,8 @@
   .studio-main { padding-top: 1.3rem; }
   .batch-generation { grid-template-columns: 1fr; }
   .story-planner-form { grid-template-columns: 1fr; }
+  .workflow-group-form { grid-template-columns: minmax(0, 1fr) 8rem; }
+  .workflow-group-form > button, .workflow-missing-only { min-height: 2.55rem; }
   .shot-generation { grid-template-columns: minmax(0, 1fr) repeat(2, minmax(7.5rem, 0.5fr)); }
 }
 
@@ -399,7 +437,12 @@
   .episode-nav, .entity-groups, .inspector-grid, .shot-generation, .batch-generation-actions { grid-template-columns: 1fr; }
   .inspector-grid .wide { grid-column: auto; }
   .studio-main-header { align-items: flex-start; flex-direction: column; }
-  .story-planner-heading, .story-plan-apply { align-items: stretch; flex-direction: column; }
+  .story-planner-heading, .story-plan-apply, .workflow-groups-heading { align-items: stretch; flex-direction: column; }
+  .workflow-selection-tools { display: grid; grid-template-columns: 1fr 1fr; }
+  .workflow-selection-tools small { grid-column: 1 / -1; }
+  .workflow-group-form { grid-template-columns: 1fr; }
+  .workflow-group-list article { align-items: stretch; flex-direction: column; }
+  .workflow-group-actions { display: grid; grid-template-columns: 1fr; }
   .story-plan-status { align-self: flex-start; }
   .story-plan-title { grid-template-columns: 1fr; }
   .story-plan-title dl { grid-template-columns: repeat(4, minmax(0, 1fr)); }

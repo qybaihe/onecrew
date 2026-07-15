@@ -1,17 +1,20 @@
 import {
   assetRecordSchema,
+  type CreativeGenerationBatchRequest,
   type CreativeProjectBundle,
   type CreativeReferenceGridRequest,
   type CreativeStoryPlanRequest,
+  type CreativeWorkflowGroup,
   type ProviderRequest,
   type QcRunRequest,
   creativeGenerationBatchSchema,
   creativeStoryPlanSchema,
+  creativeWorkflowGroupSchema,
   episodeSpecSchema,
   sceneSpecSchema,
   shotSpecSchema,
 } from '@onecrew/contracts';
-import { VersionConflictError } from '@onecrew/domain';
+import { createInputHash, VersionConflictError } from '@onecrew/domain';
 import { describe, expect, it } from 'vitest';
 
 import { createApp } from './app.js';
@@ -182,6 +185,14 @@ describe('creative routes', () => {
     let storyPlanRequest: CreativeStoryPlanRequest | undefined;
     let referenceGridRequest: CreativeReferenceGridRequest | undefined;
     let reusedAssetInput: { entityId: string; sourceAssetId: string; expectedEntityVersion: number } | undefined;
+    const batchSubmitRequests: Array<{
+      projectId: string;
+      request: CreativeGenerationBatchRequest;
+      idempotencyKey: string;
+    }> = [];
+    const submittedWorkflowBatches = new Map<string, typeof batchRecord>();
+    let currentWorkflowGroup: CreativeWorkflowGroup | undefined;
+    let workflowGroupVersion = 0;
     const storyPlan = creativeStoryPlanSchema.parse({
       title: '星门续章', logline: '导航员抵达星门。',
       episodes: [{
@@ -326,11 +337,26 @@ describe('creative routes', () => {
           },
         },
         batchGenerator: {
-          async submit(id) {
+          async submit(id, request, idempotencyKey) {
             if (id !== projectId) throw new Error('wrong project');
+            batchSubmitRequests.push({ projectId: id, request, idempotencyKey });
+            if (idempotencyKey.startsWith('workflow-group:')) {
+              const workflowBatch = creativeGenerationBatchSchema.parse({
+                ...batchRecord,
+                batchId: `batch_${createInputHash({ projectId, idempotencyKey }).slice(0, 32)}`,
+                kind: request.kind,
+                missingOnly: request.missingOnly,
+                generationNonce: request.generationNonce,
+                concurrency: request.concurrency,
+              });
+              submittedWorkflowBatches.set(workflowBatch.batchId, workflowBatch);
+              return { value: workflowBatch, version: 1 };
+            }
             return { value: batchRecord, version: 1 };
           },
           async get(id) {
+            const workflowBatch = submittedWorkflowBatches.get(id);
+            if (workflowBatch) return { value: workflowBatch, version: 1 };
             if (id !== batchRecord.batchId) throw new Error('wrong batch');
             return { value: batchRecord, version: 1 };
           },
@@ -451,6 +477,43 @@ describe('creative routes', () => {
             };
           },
         },
+        workflowGroups: {
+          async create(record) {
+            if (currentWorkflowGroup) {
+              return { value: currentWorkflowGroup, version: workflowGroupVersion, replayed: true };
+            }
+            currentWorkflowGroup = creativeWorkflowGroupSchema.parse(record);
+            workflowGroupVersion = 1;
+            return { value: currentWorkflowGroup, version: workflowGroupVersion, replayed: false };
+          },
+          async get(groupId) {
+            if (!currentWorkflowGroup || currentWorkflowGroup.groupId !== groupId) {
+              throw new Error('wrong workflow group');
+            }
+            return { value: currentWorkflowGroup, version: workflowGroupVersion };
+          },
+          async listForProject(id) {
+            if (id !== projectId) throw new Error('wrong project');
+            return currentWorkflowGroup
+              ? [{ value: currentWorkflowGroup, version: workflowGroupVersion }]
+              : [];
+          },
+          async attachBatch(groupId, expectedVersion, batchId) {
+            if (!currentWorkflowGroup || currentWorkflowGroup.groupId !== groupId) {
+              throw new Error('wrong workflow group');
+            }
+            if (expectedVersion !== workflowGroupVersion) {
+              throw new VersionConflictError(expectedVersion, workflowGroupVersion);
+            }
+            currentWorkflowGroup = creativeWorkflowGroupSchema.parse({
+              ...currentWorkflowGroup,
+              lastBatchId: batchId,
+              updatedAt: new Date().toISOString(),
+            });
+            workflowGroupVersion += 1;
+            return { value: currentWorkflowGroup, version: workflowGroupVersion };
+          },
+        },
       },
     });
 
@@ -563,6 +626,101 @@ describe('creative routes', () => {
       sourceAssetId: reusableAsset.assetId,
       expectedEntityVersion: 2,
     });
+
+    const missingWorkflowGroupKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/workflow-groups`,
+      payload: {
+        name: '主线镜头', shotIds: [shotId], generationKind: 'image', missingOnly: true,
+        concurrency: 2, createdBy: 'ou_studio',
+      },
+    });
+    expect(missingWorkflowGroupKey.statusCode).toBe(400);
+
+    const workflowGroup = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/workflow-groups`,
+      headers: { 'idempotency-key': 'creative_workflow_group_1' },
+      payload: {
+        name: '主线镜头', description: '保存后继续补齐。', shotIds: [shotId], generationKind: 'image',
+        missingOnly: true, concurrency: 2, createdBy: 'ou_studio',
+      },
+    });
+    expect(workflowGroup.statusCode).toBe(201);
+    expect(workflowGroup.json()).toMatchObject({
+      group: { name: '主线镜头', shotIds: [shotId], generationKind: 'image' },
+      version: 1,
+      replayed: false,
+    });
+    const workflowGroupId = workflowGroup.json().group.groupId as string;
+
+    const workflowGroups = await app.inject({
+      method: 'GET',
+      url: `/v1/creative/projects/${projectId}/workflow-groups`,
+    });
+    expect(workflowGroups.json()).toMatchObject({
+      groups: [{ group: { groupId: workflowGroupId, name: '主线镜头' }, version: 1 }],
+    });
+
+    const workflowRun = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/workflow-groups/${workflowGroupId}/run`,
+      headers: { 'idempotency-key': 'creative_workflow_run_1' },
+      payload: {
+        expectedGroupVersion: 1,
+        expectedShotVersions: { [shotId]: 2 },
+        route: 'primary',
+        generationNonce: 13,
+        forceRegenerate: false,
+      },
+    });
+    expect(workflowRun.statusCode).toBe(202);
+    const workflowBatchId = workflowRun.json().batch.batchId as string;
+    expect(workflowRun.json()).toMatchObject({
+      group: { groupId: workflowGroupId, lastBatchId: workflowBatchId },
+      groupVersion: 2,
+      batch: { batchId: workflowBatchId },
+    });
+    expect(batchSubmitRequests.at(-1)).toMatchObject({
+      projectId,
+      request: { shotIds: [shotId], kind: 'image', missingOnly: true, concurrency: 2 },
+      idempotencyKey: `workflow-group:${workflowGroupId}:creative_workflow_run_1`,
+    });
+
+    const workflowRunReplay = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/workflow-groups/${workflowGroupId}/run`,
+      headers: { 'idempotency-key': 'creative_workflow_run_1' },
+      payload: {
+        expectedGroupVersion: 1,
+        expectedShotVersions: { [shotId]: 2 },
+        route: 'primary',
+        generationNonce: 13,
+        forceRegenerate: false,
+      },
+    });
+    expect(workflowRunReplay.statusCode).toBe(202);
+    expect(workflowRunReplay.json()).toMatchObject({
+      groupVersion: 2,
+      batch: { batchId: workflowBatchId },
+    });
+    expect(batchSubmitRequests.filter((item) => item.idempotencyKey.endsWith('creative_workflow_run_1')))
+      .toHaveLength(1);
+
+    const workflowForceRun = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/workflow-groups/${workflowGroupId}/run`,
+      headers: { 'idempotency-key': 'creative_workflow_run_force_1' },
+      payload: {
+        expectedGroupVersion: 2,
+        expectedShotVersions: { [shotId]: 2 },
+        generationNonce: 14,
+        forceRegenerate: true,
+      },
+    });
+    expect(workflowForceRun.statusCode).toBe(202);
+    expect(workflowForceRun.json()).toMatchObject({ groupVersion: 3 });
+    expect(batchSubmitRequests.at(-1)?.request).toMatchObject({ missingOnly: false, generationNonce: 14 });
 
     const missingStoryPlanKey = await app.inject({
       method: 'POST',

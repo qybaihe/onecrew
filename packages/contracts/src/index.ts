@@ -1035,6 +1035,42 @@ export const creativeGenerationBatchSchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
+export const creativeWorkflowGroupSchema = z.object({
+  groupId: idSchema,
+  projectId: idSchema,
+  name: z.string().min(1).max(120),
+  description: z.string().max(2_000).optional(),
+  shotIds: z.array(idSchema).min(1).max(100).refine(
+    (shotIds) => new Set(shotIds).size === shotIds.length,
+    { message: 'shotIds must not contain duplicates' },
+  ),
+  generationKind: creativeGenerationKindSchema,
+  missingOnly: z.boolean(),
+  concurrency: z.number().int().min(1).max(10),
+  createdBy: idSchema,
+  lastBatchId: idSchema.optional(),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+});
+
+export const creativeWorkflowGroupCreateRequestSchema = creativeWorkflowGroupSchema.pick({
+  name: true,
+  description: true,
+  shotIds: true,
+  generationKind: true,
+  missingOnly: true,
+  concurrency: true,
+  createdBy: true,
+});
+
+export const creativeWorkflowGroupRunRequestSchema = z.object({
+  expectedGroupVersion: z.number().int().positive(),
+  expectedShotVersions: z.record(idSchema, z.number().int().positive()),
+  route: providerRouteSchema.default('primary'),
+  generationNonce: z.number().int().nonnegative(),
+  forceRegenerate: z.boolean().default(false),
+});
+
 export const creativeReferenceGridRequestSchema = z.object({
   sourceAssetId: idSchema,
   expectedEntityVersion: z.number().int().positive(),
@@ -1188,6 +1224,9 @@ export const contractSchemas = {
   AsyncJobAccepted: asyncJobAcceptedSchema,
   CreativeGenerationBatchRequest: creativeGenerationBatchRequestSchema,
   CreativeGenerationBatch: creativeGenerationBatchSchema,
+  CreativeWorkflowGroup: creativeWorkflowGroupSchema,
+  CreativeWorkflowGroupCreateRequest: creativeWorkflowGroupCreateRequestSchema,
+  CreativeWorkflowGroupRunRequest: creativeWorkflowGroupRunRequestSchema,
   CreativeReferenceGridRequest: creativeReferenceGridRequestSchema,
   CreativeReferenceGridResult: creativeReferenceGridResultSchema,
   CreativeReusableAsset: creativeReusableAssetSchema,
@@ -1251,6 +1290,9 @@ export type CreativeGenerationBatchStatus = z.infer<typeof creativeGenerationBat
 export type CreativeGenerationBatchRequest = z.infer<typeof creativeGenerationBatchRequestSchema>;
 export type CreativeGenerationBatchItem = z.infer<typeof creativeGenerationBatchItemSchema>;
 export type CreativeGenerationBatch = z.infer<typeof creativeGenerationBatchSchema>;
+export type CreativeWorkflowGroup = z.infer<typeof creativeWorkflowGroupSchema>;
+export type CreativeWorkflowGroupCreateRequest = z.infer<typeof creativeWorkflowGroupCreateRequestSchema>;
+export type CreativeWorkflowGroupRunRequest = z.infer<typeof creativeWorkflowGroupRunRequestSchema>;
 export type CreativeReferenceGridRequest = z.infer<typeof creativeReferenceGridRequestSchema>;
 export type CreativeReferenceGridResult = z.infer<typeof creativeReferenceGridResultSchema>;
 export type CreativeReusableAsset = z.infer<typeof creativeReusableAssetSchema>;

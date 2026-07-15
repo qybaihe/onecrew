@@ -64,6 +64,13 @@
       "when": 1784133563421,
       "tag": "0008_purple_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784139685809,
+      "tag": "0009_blushing_vulcan",
+      "breakpoints": true
     }
   ]
 }

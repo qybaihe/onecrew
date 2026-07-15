@@ -1,6 +1,7 @@
 import type {
   AssetRecord,
   CreativeGenerationBatch,
+  CreativeWorkflowGroup,
   CreativeEntity,
   EpisodeSpec,
   FramePromptSpec,
@@ -277,6 +278,25 @@ export const creativeGenerationBatches = pgTable(
       table.idempotencyKey,
     ),
     index('creative_generation_batches_project_status_idx').on(table.projectId, table.status),
+  ],
+);
+
+export const creativeWorkflowGroups = pgTable(
+  'creative_workflow_groups',
+  {
+    groupId: text('group_id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    generationKind: text('generation_kind').notNull(),
+    record: jsonb('record').$type<CreativeWorkflowGroup>().notNull(),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('creative_workflow_groups_project_name_uidx').on(table.projectId, table.name),
+    index('creative_workflow_groups_project_idx').on(table.projectId, table.updatedAt),
   ],
 );
 

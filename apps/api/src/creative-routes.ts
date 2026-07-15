@@ -17,6 +17,8 @@ import {
   creativeReferenceGridRequestSchema,
   creativeReusableAssetReuseRequestSchema,
   creativeStoryPlanRequestSchema,
+  creativeWorkflowGroupCreateRequestSchema,
+  creativeWorkflowGroupRunRequestSchema,
   episodeSpecSchema,
   propSpecSchema,
   sceneSpecSchema,
@@ -27,11 +29,13 @@ import {
   InvalidCreativeAssetBindingError,
   InvalidCreativeReferenceGridError,
   InvalidCreativeReusableAssetError,
+  InvalidCreativeWorkflowGroupError,
   RecordNotFoundError,
   type CreativeRepository,
+  type CreativeWorkflowGroupRepository,
   type ShotRepository,
 } from '@onecrew/db';
-import { VersionConflictError } from '@onecrew/domain';
+import { createInputHash, VersionConflictError } from '@onecrew/domain';
 import { InvalidImageGridError, type S3MediaStore } from '@onecrew/media';
 import {
   CreativeGenerationBatchValidationError,
@@ -68,6 +72,10 @@ export interface CreativeRouteOptions {
   storyPlanner?: Pick<CreativeStoryPlanner, 'submit' | 'preview' | 'apply'>;
   referenceGrid?: Pick<CreativeReferenceGridProcessor, 'process'>;
   reusableAssets?: Pick<CreativeRepository, 'searchReusableAssets' | 'reuseAsset'>;
+  workflowGroups?: Pick<
+    CreativeWorkflowGroupRepository,
+    'create' | 'get' | 'listForProject' | 'attachBatch'
+  >;
 }
 
 const importOptionsSchema = z.object({
@@ -168,6 +176,96 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
     if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
     try {
       return { projects: await options.repository.listProjects() };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.get('/v1/creative/projects/:projectId/workflow-groups', async (request, reply) => {
+    if (!options?.workflowGroups) return creativeError(reply, new CreativeWorkflowGroupsNotConfiguredError());
+    try {
+      const { projectId } = request.params as { projectId: string };
+      const groups = await options.workflowGroups.listForProject(projectId);
+      return { groups: groups.map((group) => ({ group: group.value, version: group.version })) };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.post('/v1/creative/projects/:projectId/workflow-groups', async (request, reply) => {
+    if (!options?.workflowGroups) return creativeError(reply, new CreativeWorkflowGroupsNotConfiguredError());
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingCreativeWorkflowGroupIdempotencyKeyError();
+      const { projectId } = request.params as { projectId: string };
+      const input = creativeWorkflowGroupCreateRequestSchema.parse(request.body);
+      const now = new Date().toISOString();
+      const result = await options.workflowGroups.create({
+        groupId: `group_${createInputHash({ projectId, idempotencyKey }).slice(0, 32)}`,
+        projectId,
+        ...input,
+        createdAt: now,
+        updatedAt: now,
+      });
+      reply.code(result.replayed ? 200 : 201);
+      return { group: result.value, version: result.version, replayed: result.replayed };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.post('/v1/creative/workflow-groups/:groupId/run', async (request, reply) => {
+    if (!options?.workflowGroups) return creativeError(reply, new CreativeWorkflowGroupsNotConfiguredError());
+    if (!options.batchGenerator) return creativeError(reply, new CreativeGenerationNotConfiguredError());
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingCreativeWorkflowGroupIdempotencyKeyError();
+      const { groupId } = request.params as { groupId: string };
+      const input = creativeWorkflowGroupRunRequestSchema.parse(request.body);
+      const current = await options.workflowGroups.get(groupId);
+      const scopedIdempotencyKey = `workflow-group:${groupId}:${idempotencyKey}`;
+      if (current.version !== input.expectedGroupVersion) {
+        const replayBatchId = `batch_${createInputHash({
+          projectId: current.value.projectId,
+          idempotencyKey: scopedIdempotencyKey,
+        }).slice(0, 32)}`;
+        if (current.value.lastBatchId === replayBatchId) {
+          const batch = await options.batchGenerator.get(replayBatchId);
+          reply.code(202);
+          return {
+            group: current.value,
+            groupVersion: current.version,
+            batch: batch.value,
+            batchVersion: batch.version,
+          };
+        }
+        throw new VersionConflictError(input.expectedGroupVersion, current.version);
+      }
+      const batch = await options.batchGenerator.submit(
+        current.value.projectId,
+        {
+          kind: current.value.generationKind,
+          shotIds: current.value.shotIds,
+          expectedVersions: input.expectedShotVersions,
+          missingOnly: input.forceRegenerate ? false : current.value.missingOnly,
+          route: input.route,
+          generationNonce: input.generationNonce,
+          concurrency: current.value.concurrency,
+        },
+        scopedIdempotencyKey,
+      );
+      const group = await options.workflowGroups.attachBatch(
+        groupId,
+        input.expectedGroupVersion,
+        batch.value.batchId,
+      );
+      reply.code(202);
+      return {
+        group: group.value,
+        groupVersion: group.version,
+        batch: batch.value,
+        batchVersion: batch.version,
+      };
     } catch (error) {
       return creativeError(reply, error);
     }
@@ -643,6 +741,13 @@ export class CreativeReusableAssetsNotConfiguredError extends Error {
   }
 }
 
+export class CreativeWorkflowGroupsNotConfiguredError extends Error {
+  constructor() {
+    super('Creative workflow groups are not configured');
+    this.name = 'CreativeWorkflowGroupsNotConfiguredError';
+  }
+}
+
 export class MissingCreativeGenerationIdempotencyKeyError extends Error {
   constructor() {
     super('Idempotency-Key header is required for creative generation');
@@ -678,6 +783,13 @@ export class MissingCreativeReusableAssetIdempotencyKeyError extends Error {
   }
 }
 
+export class MissingCreativeWorkflowGroupIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for creative workflow groups');
+    this.name = 'MissingCreativeWorkflowGroupIdempotencyKeyError';
+  }
+}
+
 export class InvalidCreativeArchiveError extends Error {
   constructor(message: string) {
     super(message);
@@ -695,7 +807,8 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeContinuityQcNotConfiguredError ||
     error instanceof CreativeStoryPlannerNotConfiguredError ||
     error instanceof CreativeReferenceGridNotConfiguredError ||
-    error instanceof CreativeReusableAssetsNotConfiguredError
+    error instanceof CreativeReusableAssetsNotConfiguredError ||
+    error instanceof CreativeWorkflowGroupsNotConfiguredError
   ) {
     reply.code(503);
   } else if (error instanceof RecordNotFoundError) {
@@ -715,8 +828,10 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof MissingCreativeStoryPlanIdempotencyKeyError ||
     error instanceof MissingCreativeReferenceGridIdempotencyKeyError ||
     error instanceof MissingCreativeReusableAssetIdempotencyKeyError ||
+    error instanceof MissingCreativeWorkflowGroupIdempotencyKeyError ||
     error instanceof InvalidCreativeReferenceGridError ||
     error instanceof InvalidCreativeReusableAssetError ||
+    error instanceof InvalidCreativeWorkflowGroupError ||
     error instanceof InvalidImageGridError ||
     error instanceof CreativeReferenceGridSourceError ||
     error instanceof CreativeContinuityQcAssetError ||

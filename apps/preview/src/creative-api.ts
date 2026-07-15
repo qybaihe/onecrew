@@ -8,6 +8,7 @@ import type {
   CreativeReusableAssetReuseResult,
   CreativeStoryPlan,
   CreativeStoryPlanApplyResult,
+  CreativeWorkflowGroup,
   EpisodeSpec,
   JobRecord,
   ProjectSpec,
@@ -97,6 +98,23 @@ export interface CreativeGenerationBatchResponse {
 export interface LatestCreativeGenerationBatchResponse {
   batch: CreativeGenerationBatch | null;
   version: number;
+}
+
+export interface CreativeWorkflowGroupListResponse {
+  groups: Array<{ group: CreativeWorkflowGroup; version: number }>;
+}
+
+export interface CreativeWorkflowGroupResponse {
+  group: CreativeWorkflowGroup;
+  version: number;
+  replayed: boolean;
+}
+
+export interface CreativeWorkflowGroupRunResponse {
+  group: CreativeWorkflowGroup;
+  groupVersion: number;
+  batch: CreativeGenerationBatch;
+  batchVersion: number;
 }
 
 export interface CreativeJobResponse {
@@ -430,6 +448,66 @@ export async function submitCreativeGenerationBatch(
     },
   );
   return json<CreativeGenerationBatchResponse>(response);
+}
+
+export async function listCreativeWorkflowGroups(
+  projectId: string,
+): Promise<CreativeWorkflowGroupListResponse['groups']> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/workflow-groups`,
+  );
+  return (await json<CreativeWorkflowGroupListResponse>(response)).groups;
+}
+
+export async function createCreativeWorkflowGroup(
+  projectId: string,
+  input: {
+    name: string;
+    description?: string;
+    shotIds: string[];
+    generationKind: 'image' | 'video';
+    missingOnly: boolean;
+    concurrency: number;
+  },
+): Promise<CreativeWorkflowGroupResponse> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/workflow-groups`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `studio_workflow_group_${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({ ...input, createdBy: 'ou_local_studio' }),
+    },
+  );
+  return json<CreativeWorkflowGroupResponse>(response);
+}
+
+export async function runCreativeWorkflowGroup(
+  groupId: string,
+  expectedGroupVersion: number,
+  expectedShotVersions: Record<string, number>,
+  forceRegenerate: boolean,
+): Promise<CreativeWorkflowGroupRunResponse> {
+  const response = await request(
+    `/v1/creative/workflow-groups/${encodeURIComponent(groupId)}/run`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `studio_workflow_run_${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        expectedGroupVersion,
+        expectedShotVersions,
+        route: 'primary',
+        generationNonce: Date.now(),
+        forceRegenerate,
+      }),
+    },
+  );
+  return json<CreativeWorkflowGroupRunResponse>(response);
 }
 
 export async function getCreativeGenerationBatch(batchId: string): Promise<CreativeGenerationBatchResponse> {

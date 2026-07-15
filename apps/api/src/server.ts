@@ -261,6 +261,7 @@ const app = createApp({
     storyPlanner: creativeStoryPlanner,
     referenceGrid: creativeReferenceGridProcessor,
     reusableAssets: repositories.creative,
+    workflowGroups: repositories.creativeWorkflowGroups,
   },
   feishu: {
     security: {

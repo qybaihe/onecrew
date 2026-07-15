@@ -3,6 +3,7 @@ import {
   characterSpecSchema,
   creativeEntitySchema,
   creativeGenerationBatchSchema,
+  creativeWorkflowGroupSchema,
   creativeProjectBundleSchema,
   creativeReferenceGridResultSchema,
   creativeReusableAssetReuseResultSchema,
@@ -30,6 +31,7 @@ import {
   type AssetStatus,
   type CreativeEntity,
   type CreativeGenerationBatch,
+  type CreativeWorkflowGroup,
   type CreativeProjectBundle,
   type CreativeReferenceGridResult,
   type CreativeReusableAsset,
@@ -73,6 +75,7 @@ import {
   assets,
   auditLogs,
   creativeGenerationBatches,
+  creativeWorkflowGroups,
   creativeEntities,
   episodes,
   experiments,
@@ -132,6 +135,13 @@ export class InvalidCreativeReusableAssetError extends Error {
   }
 }
 
+export class InvalidCreativeWorkflowGroupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCreativeWorkflowGroupError';
+  }
+}
+
 export interface Versioned<T> {
   value: T;
   version: number;
@@ -139,7 +149,7 @@ export interface Versioned<T> {
 
 async function currentVersionOrThrow(
   db: OneCrewDatabase,
-  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'creative_workflow_group' | 'render' | 'qc_run' | 'localization_run',
   id: string,
 ): Promise<number> {
   if (entity === 'project') {
@@ -176,6 +186,13 @@ async function currentVersionOrThrow(
       .where(eq(creativeGenerationBatches.batchId, id));
     if (row) return row.version;
   }
+  if (entity === 'creative_workflow_group') {
+    const [row] = await db
+      .select({ version: creativeWorkflowGroups.version })
+      .from(creativeWorkflowGroups)
+      .where(eq(creativeWorkflowGroups.groupId, id));
+    if (row) return row.version;
+  }
   if (entity === 'render') {
     const [row] = await db.select({ version: renders.version }).from(renders).where(eq(renders.renderId, id));
     if (row) return row.version;
@@ -196,7 +213,7 @@ async function currentVersionOrThrow(
 
 async function throwVersionConflict(
   db: OneCrewDatabase,
-  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'creative_workflow_group' | 'render' | 'qc_run' | 'localization_run',
   id: string,
   expectedVersion: number,
 ): Promise<never> {
@@ -1345,6 +1362,131 @@ export class CreativeGenerationBatchRepository {
   }
 }
 
+export class CreativeWorkflowGroupRepository {
+  constructor(private readonly db: OneCrewDatabase) {}
+
+  private async validateShotIds(projectId: string, shotIds: string[]): Promise<void> {
+    const rows = await this.db
+      .select({ shotId: shots.shotId, projectId: shots.projectId })
+      .from(shots)
+      .where(inArray(shots.shotId, shotIds));
+    const validIds = new Set(rows.filter((row) => row.projectId === projectId).map((row) => row.shotId));
+    const invalidIds = shotIds.filter((shotId) => !validIds.has(shotId));
+    if (invalidIds.length > 0) {
+      throw new InvalidCreativeWorkflowGroupError(
+        `Workflow group references missing or cross-project shots: ${invalidIds.join(', ')}`,
+      );
+    }
+  }
+
+  async create(
+    input: CreativeWorkflowGroup,
+  ): Promise<Versioned<CreativeWorkflowGroup> & { replayed: boolean }> {
+    const record = creativeWorkflowGroupSchema.parse(input);
+    await this.validateShotIds(record.projectId, record.shotIds);
+    const [row] = await this.db
+      .insert(creativeWorkflowGroups)
+      .values({
+        groupId: record.groupId,
+        projectId: record.projectId,
+        name: record.name,
+        generationKind: record.generationKind,
+        record,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (row) {
+      return { value: creativeWorkflowGroupSchema.parse(row.record), version: row.version, replayed: false };
+    }
+
+    let existing: Versioned<CreativeWorkflowGroup>;
+    try {
+      existing = await this.get(record.groupId);
+    } catch (error) {
+      if (error instanceof RecordNotFoundError) {
+        throw new InvalidCreativeWorkflowGroupError(
+          `A workflow group named "${record.name}" already exists in this project`,
+        );
+      }
+      throw error;
+    }
+    const comparable = (value: CreativeWorkflowGroup) => ({
+      projectId: value.projectId,
+      name: value.name,
+      description: value.description,
+      shotIds: value.shotIds,
+      generationKind: value.generationKind,
+      missingOnly: value.missingOnly,
+      concurrency: value.concurrency,
+      createdBy: value.createdBy,
+    });
+    if (createInputHash(comparable(existing.value)) !== createInputHash(comparable(record))) {
+      throw new IdempotencyConflictError('creative_workflow_group', record.groupId);
+    }
+    return { ...existing, replayed: true };
+  }
+
+  async get(groupId: string): Promise<Versioned<CreativeWorkflowGroup>> {
+    const [row] = await this.db
+      .select()
+      .from(creativeWorkflowGroups)
+      .where(eq(creativeWorkflowGroups.groupId, groupId));
+    if (!row) throw new RecordNotFoundError('creative_workflow_group', groupId);
+    return { value: creativeWorkflowGroupSchema.parse(row.record), version: row.version };
+  }
+
+  async listForProject(projectId: string): Promise<Array<Versioned<CreativeWorkflowGroup>>> {
+    const rows = await this.db
+      .select()
+      .from(creativeWorkflowGroups)
+      .where(eq(creativeWorkflowGroups.projectId, projectId))
+      .orderBy(desc(creativeWorkflowGroups.updatedAt));
+    return rows.map((row) => ({
+      value: creativeWorkflowGroupSchema.parse(row.record),
+      version: row.version,
+    }));
+  }
+
+  async attachBatch(
+    groupId: string,
+    expectedVersion: number,
+    batchId: string,
+  ): Promise<Versioned<CreativeWorkflowGroup>> {
+    const [current, batch] = await Promise.all([this.get(groupId), this.getBatch(batchId)]);
+    assertExpectedVersion(expectedVersion, current.version);
+    if (batch.projectId !== current.value.projectId) {
+      throw new InvalidCreativeWorkflowGroupError('Workflow group and generation batch belong to different projects');
+    }
+    const updatedAt = new Date();
+    const next = creativeWorkflowGroupSchema.parse({
+      ...current.value,
+      lastBatchId: batchId,
+      updatedAt: updatedAt.toISOString(),
+    });
+    const [row] = await this.db
+      .update(creativeWorkflowGroups)
+      .set({ record: next, version: expectedVersion + 1, updatedAt })
+      .where(
+        and(
+          eq(creativeWorkflowGroups.groupId, groupId),
+          eq(creativeWorkflowGroups.version, expectedVersion),
+        ),
+      )
+      .returning();
+    if (!row) return throwVersionConflict(this.db, 'creative_workflow_group', groupId, expectedVersion);
+    return { value: creativeWorkflowGroupSchema.parse(row.record), version: row.version };
+  }
+
+  private async getBatch(batchId: string): Promise<CreativeGenerationBatch> {
+    const [row] = await this.db
+      .select({ record: creativeGenerationBatches.record })
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.batchId, batchId));
+    if (!row) throw new RecordNotFoundError('creative_generation_batch', batchId);
+    return creativeGenerationBatchSchema.parse(row.record);
+  }
+}
+
 export class QcRepository {
   constructor(private readonly db: OneCrewDatabase) {}
 
@@ -2346,6 +2488,7 @@ export function createRepositories(db: OneCrewDatabase) {
     assets: new AssetRepository(db),
     jobs: new JobRepository(db),
     creativeGenerationBatches: new CreativeGenerationBatchRepository(db),
+    creativeWorkflowGroups: new CreativeWorkflowGroupRepository(db),
     qc: new QcRepository(db),
     qcRuns: new QcRunRepository(db),
     localizationRuns: new LocalizationRunRepository(db),

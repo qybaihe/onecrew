@@ -4,6 +4,7 @@ import type {
   CreativeGenerationBatch,
   CreativeReusableAsset,
   CreativeStoryPlan,
+  CreativeWorkflowGroup,
   EpisodeSpec,
   JobStatus,
   ProjectSpec,
@@ -25,6 +26,7 @@ import '@xyflow/react/dist/style.css';
 import {
   applyCreativeStoryPlan,
   cancelCreativeGenerationBatch,
+  createCreativeWorkflowGroup,
   downloadCreativeProject,
   getCreativeGenerationBatch,
   getCreativeJob,
@@ -34,9 +36,11 @@ import {
   getCreativeStoryPlan,
   importCreativeArchive,
   listCreativeProjects,
+  listCreativeWorkflowGroups,
   preprocessCreativeReferenceGrid,
   reuseCreativeAsset,
   retryCreativeGenerationBatch,
+  runCreativeWorkflowGroup,
   searchCreativeReusableAssets,
   submitCreativeGenerationBatch,
   submitCreativeContinuityQc,
@@ -287,6 +291,13 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [continuityQc, setContinuityQc] = useState<ContinuityQcState>({ status: 'idle' });
   const [generationBatch, setGenerationBatch] = useState<CreativeGenerationBatch>();
   const [batchAction, setBatchAction] = useState<'idle' | 'submitting' | 'polling' | 'stopping' | 'retrying'>('idle');
+  const [workflowGroups, setWorkflowGroups] = useState<Array<{ group: CreativeWorkflowGroup; version: number }>>([]);
+  const [workflowGroupShotIds, setWorkflowGroupShotIds] = useState<string[]>([]);
+  const [workflowGroupName, setWorkflowGroupName] = useState('');
+  const [workflowGroupKind, setWorkflowGroupKind] = useState<GenerationKind>('image');
+  const [workflowGroupMissingOnly, setWorkflowGroupMissingOnly] = useState(true);
+  const [workflowGroupAction, setWorkflowGroupAction] = useState<'idle' | 'saving' | 'running'>('idle');
+  const [runningWorkflowGroupId, setRunningWorkflowGroupId] = useState('');
   const [storyBrief, setStoryBrief] = useState('');
   const [storyEpisodeCount, setStoryEpisodeCount] = useState(3);
   const [storyPlan, setStoryPlan] = useState<StoryPlanState>({ status: 'idle' });
@@ -320,6 +331,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     projectSelectionRef.current = selectedProjectId ?? '';
     setGenerationBatch(undefined);
     setBatchAction('idle');
+    setWorkflowGroups([]);
+    setWorkflowGroupShotIds([]);
+    setWorkflowGroupName('');
+    setWorkflowGroupAction('idle');
+    setRunningWorkflowGroupId('');
     setStoryPlan({ status: 'idle' });
     if (!selectedProjectId) {
       setProject(undefined);
@@ -341,6 +357,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     void getLatestCreativeGenerationBatch(selectedProjectId)
       .then((result) => {
         if (projectSelectionRef.current === selectedProjectId) setGenerationBatch(result.batch ?? undefined);
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+    void listCreativeWorkflowGroups(selectedProjectId)
+      .then((result) => {
+        if (projectSelectionRef.current === selectedProjectId) setWorkflowGroups(result);
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
   }, [selectedProjectId]);
@@ -752,6 +773,97 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
         reason: reason instanceof Error ? reason.message : String(reason),
       }));
       setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const toggleWorkflowGroupShot = (shotId: string) => {
+    setWorkflowGroupShotIds((current) => current.includes(shotId)
+      ? current.filter((currentId) => currentId !== shotId)
+      : [...current, shotId]);
+  };
+
+  const selectCurrentEpisodeShots = () => {
+    setWorkflowGroupShotIds((current) => [
+      ...new Set([...current, ...episodeShots.map((shot) => shot.shotId)]),
+    ]);
+  };
+
+  const handleWorkflowGroupCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedProjectId || !workflowGroupName.trim()) return;
+    if (workflowGroupShotIds.length === 0) return setError('请先勾选至少一个分镜，再保存镜头组。');
+    const projectId = selectedProjectId;
+    setError(undefined);
+    setWorkflowGroupAction('saving');
+    try {
+      const result = await createCreativeWorkflowGroup(projectId, {
+        name: workflowGroupName.trim(),
+        description: `Studio 保存的${workflowGroupKind === 'image' ? '分镜图' : '视频'}工作流组`,
+        shotIds: workflowGroupShotIds,
+        generationKind: workflowGroupKind,
+        missingOnly: workflowGroupMissingOnly,
+        concurrency: 3,
+      });
+      if (projectSelectionRef.current !== projectId) return;
+      setWorkflowGroups((current) => [
+        { group: result.group, version: result.version },
+        ...current.filter((item) => item.group.groupId !== result.group.groupId),
+      ]);
+      setWorkflowGroupName('');
+      setWorkflowGroupShotIds([]);
+    } catch (reason) {
+      if (projectSelectionRef.current === projectId) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    } finally {
+      if (projectSelectionRef.current === projectId) setWorkflowGroupAction('idle');
+    }
+  };
+
+  const handleWorkflowGroupRun = async (
+    group: CreativeWorkflowGroup,
+    version: number,
+    forceRegenerate: boolean,
+  ) => {
+    if (!project || !selectedProjectId) return;
+    if (shotDirty) return setError('请先保存当前分镜修改，再运行镜头工作流组。');
+    const projectId = selectedProjectId;
+    const expectedShotVersions = Object.fromEntries(
+      group.shotIds.map((shotId) => [shotId, project.versions.shots[shotId]]),
+    );
+    const missingVersion = group.shotIds.find((shotId) => !expectedShotVersions[shotId]);
+    if (missingVersion) return setError(`镜头组中的 ${missingVersion} 已不存在或版本不可读，请重新保存镜头组。`);
+    setError(undefined);
+    setWorkflowGroupAction('running');
+    setRunningWorkflowGroupId(group.groupId);
+    try {
+      const result = await runCreativeWorkflowGroup(
+        group.groupId,
+        version,
+        expectedShotVersions as Record<string, number>,
+        forceRegenerate,
+      );
+      if (projectSelectionRef.current !== projectId) return;
+      setWorkflowGroups((current) => current.map((item) => item.group.groupId === group.groupId
+        ? { group: result.group, version: result.groupVersion }
+        : item));
+      setGenerationBatch(result.batch);
+      if (['succeeded', 'partial', 'failed', 'cancelled', 'waiting_human'].includes(result.batch.status)) {
+        setProject(await getCreativeProject(projectId));
+      } else {
+        await followGenerationBatch(result.batch.batchId, projectId);
+      }
+    } catch (reason) {
+      if (projectSelectionRef.current === projectId) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        const latest = await listCreativeWorkflowGroups(projectId).catch(() => undefined);
+        if (latest) setWorkflowGroups(latest);
+      }
+    } finally {
+      if (projectSelectionRef.current === projectId) {
+        setWorkflowGroupAction('idle');
+        setRunningWorkflowGroupId('');
+      }
     }
   };
 
@@ -1229,6 +1341,89 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
             )}
           </section>
 
+          <section className="workflow-groups" aria-label="镜头工作流组">
+            <div className="workflow-groups-heading">
+              <div>
+                <span>SHOT WORKFLOW GROUPS</span>
+                <strong>把常用镜头组合保存下来</strong>
+                <p>勾选分镜后保存；下次打开仍可补齐缺失结果，或对整组创建新素材版本。</p>
+              </div>
+              <div className="workflow-selection-tools">
+                <small>已选 {workflowGroupShotIds.length} 个镜头</small>
+                <button type="button" onClick={selectCurrentEpisodeShots}>选择当前集</button>
+                <button type="button" disabled={workflowGroupShotIds.length === 0} onClick={() => setWorkflowGroupShotIds([])}>清空</button>
+              </div>
+            </div>
+            <form className="workflow-group-form" onSubmit={(event) => void handleWorkflowGroupCreate(event)}>
+              <label>
+                <span>镜头组名称</span>
+                <input
+                  value={workflowGroupName}
+                  maxLength={120}
+                  placeholder="例如：第一集主线动作"
+                  onChange={(event) => setWorkflowGroupName(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>生成内容</span>
+                <select value={workflowGroupKind} onChange={(event) => setWorkflowGroupKind(event.target.value as GenerationKind)}>
+                  <option value="image">分镜图</option>
+                  <option value="video">视频</option>
+                </select>
+              </label>
+              <label className="workflow-missing-only">
+                <input
+                  type="checkbox"
+                  checked={workflowGroupMissingOnly}
+                  onChange={(event) => setWorkflowGroupMissingOnly(event.target.checked)}
+                />
+                <span>默认只补缺失项</span>
+              </label>
+              <button
+                type="submit"
+                disabled={!workflowGroupName.trim() || workflowGroupShotIds.length === 0 || workflowGroupAction !== 'idle'}
+              >
+                {workflowGroupAction === 'saving' ? '保存中…' : '保存镜头组'}
+              </button>
+            </form>
+            {workflowGroups.length > 0 && (
+              <div className="workflow-group-list">
+                {workflowGroups.map(({ group, version }) => {
+                  const running = runningWorkflowGroupId === group.groupId;
+                  const shotLabels = group.shotIds.map((shotId) => {
+                    const shot = bundle?.shots.find((candidate) => candidate.shotId === shotId);
+                    return shot ? `#${String(shot.sequence).padStart(3, '0')}` : shotId;
+                  });
+                  return (
+                    <article key={group.groupId}>
+                      <div>
+                        <span>{group.generationKind === 'image' ? 'IMAGE GROUP' : 'VIDEO GROUP'} · v{version}</span>
+                        <strong>{group.name}</strong>
+                        <small>{shotLabels.join(' · ')}{group.lastBatchId ? ' · 已运行' : ' · 尚未运行'}</small>
+                      </div>
+                      <div className="workflow-group-actions">
+                        <button
+                          type="button"
+                          disabled={shotDirty || batchActive || workflowGroupAction !== 'idle'}
+                          onClick={() => void handleWorkflowGroupRun(group, version, false)}
+                        >
+                          {running ? '运行中…' : '补齐缺失项'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={shotDirty || batchActive || workflowGroupAction !== 'idle'}
+                          onClick={() => void handleWorkflowGroupRun(group, version, true)}
+                        >
+                          整组生成新版本
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
           <section className="batch-generation" aria-label="批量生成">
             <div className="batch-generation-copy">
               <span>BATCH GENERATION</span>
@@ -1287,21 +1482,30 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
           ) : view === 'storyboards' ? (
             <div className="shot-list" role="list">
               {episodeShots.map((shot) => (
-                <button
-                  key={shot.shotId}
-                  type="button"
-                  role="listitem"
-                  className={selectedShotId === shot.shotId ? 'shot-card selected' : 'shot-card'}
-                  onClick={() => setSelectedShotId(shot.shotId)}
-                >
-                  <span className="shot-number">{String(shot.sequence).padStart(3, '0')}</span>
-                  <span className="shot-copy">
-                    <small>{shot.shotType ?? '镜头'} · {shot.durationSec}s</small>
-                    <strong>{shot.title?.trim() || shot.action}</strong>
-                    <span>{shot.camera}</span>
-                  </span>
-                  <span className={`shot-status ${shot.status}`}>{shot.status}</span>
-                </button>
+                <div className="shot-card-row" role="listitem" key={shot.shotId}>
+                  <label className="shot-group-select" title="加入镜头工作流组">
+                    <input
+                      type="checkbox"
+                      checked={workflowGroupShotIds.includes(shot.shotId)}
+                      onChange={() => toggleWorkflowGroupShot(shot.shotId)}
+                      aria-label={`选择镜头 ${shot.sequence}`}
+                    />
+                    <span aria-hidden="true">✓</span>
+                  </label>
+                  <button
+                    type="button"
+                    className={selectedShotId === shot.shotId ? 'shot-card selected' : 'shot-card'}
+                    onClick={() => setSelectedShotId(shot.shotId)}
+                  >
+                    <span className="shot-number">{String(shot.sequence).padStart(3, '0')}</span>
+                    <span className="shot-copy">
+                      <small>{shot.shotType ?? '镜头'} · {shot.durationSec}s</small>
+                      <strong>{shot.title?.trim() || shot.action}</strong>
+                      <span>{shot.camera}</span>
+                    </span>
+                    <span className={`shot-status ${shot.status}`}>{shot.status}</span>
+                  </button>
+                </div>
               ))}
             </div>
           ) : (

@@ -36,6 +36,9 @@ GET   /v1/creative/projects/:projectId/generation-batches/latest
 GET   /v1/creative/generation-batches/:batchId
 POST  /v1/creative/generation-batches/:batchId/cancel
 POST  /v1/creative/generation-batches/:batchId/retry
+GET   /v1/creative/projects/:projectId/workflow-groups
+POST  /v1/creative/projects/:projectId/workflow-groups
+POST  /v1/creative/workflow-groups/:groupId/run
 GET  /v1/creative/projects/:projectId/exports/onecrew.zip
 GET  /v1/creative/projects/:projectId/exports/compatible.zip
 ```
@@ -223,6 +226,53 @@ curl --request POST \
 ```
 
 跨工程复用不复制媒体字节，而是在目标工程生成确定性别名资产：保留原 URI、SHA-256、许可证与 Provider/Model 信息，用 `parentAssetId` 指回来源，并在同一 PostgreSQL 事务中完成别名登记、实体绑定、版本递增和审计。这使目标工程可独立导出，同时不会修改原工程。
+
+### 保存并运行镜头工作流组
+
+镜头工作流组用于保存需要反复补齐或重跑的镜头集合。创建时所有镜头必须属于 URL 中的项目，名称在项目内唯一，并要求幂等键：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/projects/prj_demo/workflow-groups \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: prj-demo-main-shots-1' \
+  --data '{
+    "name": "第一集主线动作",
+    "description": "优先补齐主线镜头的分镜图。",
+    "shotIds": ["shot_demo_001", "shot_demo_003"],
+    "generationKind": "image",
+    "missingOnly": true,
+    "concurrency": 3,
+    "createdBy": "ou_local_studio"
+  }'
+```
+
+响应包含 `group`、当前 `version` 和 `replayed`。通过项目列表端点可在页面刷新或服务重启后恢复：
+
+```bash
+curl http://127.0.0.1:3000/v1/creative/projects/prj_demo/workflow-groups
+```
+
+运行时必须携带镜头组当前版本和每个组内分镜的当前版本：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/workflow-groups/group_xxx/run \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: group-xxx-run-1' \
+  --data '{
+    "expectedGroupVersion": 1,
+    "expectedShotVersions": {
+      "shot_demo_001": 2,
+      "shot_demo_003": 1
+    },
+    "route": "primary",
+    "generationNonce": 1,
+    "forceRegenerate": false
+  }'
+```
+
+`forceRegenerate: false` 继承组的缺失项策略；设为 `true` 时本次运行会重跑整组并产生新的资产版本。两种模式都直接复用现有持久批次、Provider、预算闸门、BullMQ Job 和资产版本链。成功响应为 HTTP 202，包含更新后的镜头组与批次；过期组版本或分镜版本返回 409。
 
 ### 从已保存分镜生成图片或视频
 
