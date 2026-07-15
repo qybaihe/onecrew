@@ -6,6 +6,7 @@ import type {
   JobStatus,
   ProjectSpec,
   ProviderMode,
+  QcRunRecord,
   ShotSpec,
 } from '@onecrew/contracts';
 import {
@@ -26,10 +27,12 @@ import {
   getCreativeJob,
   getLatestCreativeGenerationBatch,
   getCreativeProject,
+  getCreativeQcRun,
   importCreativeArchive,
   listCreativeProjects,
   retryCreativeGenerationBatch,
   submitCreativeGenerationBatch,
+  submitCreativeContinuityQc,
   submitCreativeShotGeneration,
   updateCreativeEntity,
   updateCreativeEpisode,
@@ -42,6 +45,7 @@ type StudioView = 'storyboards' | 'canvas';
 type SaveState = 'idle' | 'saving' | 'saved';
 type GenerationKind = 'image' | 'video';
 type GenerationStatus = 'idle' | 'submitting' | JobStatus;
+type ContinuityQcStatus = 'idle' | 'submitting' | QcRunRecord['status'];
 
 interface GenerationState {
   status: GenerationStatus;
@@ -49,6 +53,17 @@ interface GenerationState {
   mode?: ProviderMode;
   provider?: string;
   outputAssetIds?: string[];
+}
+
+interface ContinuityQcState {
+  status: ContinuityQcStatus;
+  qcRunId?: string;
+  assetId?: string;
+  assetVersion?: number;
+  mediaType?: 'image' | 'video';
+  decision?: QcRunRecord['decision'];
+  reason?: string;
+  reviewDelivery?: QcRunRecord['reviewDelivery'];
 }
 
 interface EpisodeDraft {
@@ -169,6 +184,18 @@ const generationStatusLabels: Record<GenerationStatus, string> = {
   cancelled: '已取消',
 };
 
+const continuityQcStatusLabels: Record<ContinuityQcStatus, string> = {
+  idle: '尚未检查',
+  submitting: '正在提交',
+  queued: '已进入 QC 队列',
+  running: '技术检查中',
+  waiting_provider: '连续性语义检查中',
+  waiting_human: '等待飞书人工复核',
+  succeeded: 'QC 已完成',
+  failed: 'QC 执行失败',
+  cancelled: 'QC 已取消',
+};
+
 const batchStatusLabels: Record<CreativeGenerationBatch['status'], string> = {
   submitting: '正在提交',
   running: '批量生成中',
@@ -224,6 +251,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [shotForm, setShotForm] = useState<ShotDraft>(() => shotDraft(undefined));
   const [entityForm, setEntityForm] = useState<EntityDraft>(() => entityDraft(undefined));
   const [shotGenerations, setShotGenerations] = useState<Partial<Record<GenerationKind, GenerationState>>>({});
+  const [continuityQc, setContinuityQc] = useState<ContinuityQcState>({ status: 'idle' });
   const [generationBatch, setGenerationBatch] = useState<CreativeGenerationBatch>();
   const [batchAction, setBatchAction] = useState<'idle' | 'submitting' | 'polling' | 'stopping' | 'retrying'>('idle');
   const [error, setError] = useState<string>();
@@ -282,6 +310,14 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const selectedShot = (bundle?.shots ?? []).find((shot) => shot.shotId === selectedShotId);
   const selectedEpisode = episodes.find((episode) => episode.episodeId === selectedEpisodeId);
   const selectedEntity = entities.find((entity) => entity.entityId === selectedEntityId);
+  const selectedQcAsset = versionedAssets
+    .filter((asset) =>
+      asset.shotId === selectedShotId &&
+      (asset.type === 'image' || asset.type === 'video') &&
+      asset.uri.startsWith('s3://') &&
+      asset.status !== 'archived',
+    )
+    .sort((left, right) => right.version - left.version || right.createdAt.localeCompare(left.createdAt))[0];
   const graph = useMemo(() => flowGraph(episodeShots, selectedShotId), [episodeShots, selectedShotId]);
   const shotDirty = useMemo(
     () => Boolean(selectedShot && JSON.stringify(shotForm) !== JSON.stringify(shotDraft(selectedShot))),
@@ -298,6 +334,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     setShotForm(shotDraft(selectedShot));
     setShotSave('idle');
     setShotGenerations({});
+    setContinuityQc({ status: 'idle' });
   }, [selectedProjectId, selectedShotId]);
 
   useEffect(() => {
@@ -485,6 +522,74 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
           : 'failed';
         return { ...current, [kind]: { ...previous, status } };
       });
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleContinuityQc = async () => {
+    if (!project || !selectedShot) return;
+    if (shotDirty) return setError('请先保存当前分镜修改，再运行连续性 QC。');
+    if (!selectedQcAsset) {
+      return setError('当前分镜没有可读取的受控图片或视频；Mock 占位 URI 不会被伪装成真实媒体检查。');
+    }
+    const expectedVersion = project.versions.shots[selectedShot.shotId];
+    if (!expectedVersion) return setError('无法读取当前分镜版本，请刷新页面。');
+    const selectionKey = `${selectedProjectId ?? ''}:${selectedShot.shotId}`;
+    const stillSelected = () => generationSelectionRef.current === selectionKey;
+    setError(undefined);
+    setContinuityQc({
+      status: 'submitting',
+      assetId: selectedQcAsset.assetId,
+      assetVersion: selectedQcAsset.version,
+      mediaType: selectedQcAsset.type as 'image' | 'video',
+    });
+    try {
+      const accepted = await submitCreativeContinuityQc(
+        selectedShot.shotId,
+        expectedVersion,
+        selectedQcAsset.assetId,
+      );
+      if (!stillSelected()) return;
+      setContinuityQc({
+        status: accepted.status,
+        qcRunId: accepted.qc_run_id,
+        assetId: accepted.source_asset_id,
+        assetVersion: accepted.source_asset_version,
+        mediaType: accepted.media_type,
+      });
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+        if (!stillSelected()) return;
+        const current = await getCreativeQcRun(accepted.qc_run_id);
+        if (!stillSelected()) return;
+        setContinuityQc({
+          status: current.qc_run.status,
+          qcRunId: current.qc_run.qcRunId,
+          assetId: accepted.source_asset_id,
+          assetVersion: accepted.source_asset_version,
+          mediaType: accepted.media_type,
+          ...(current.qc_run.decision ? { decision: current.qc_run.decision } : {}),
+          ...(current.qc_run.reason
+            ? { reason: current.qc_run.reason }
+            : current.qc_run.errorMessage
+              ? { reason: current.qc_run.errorMessage }
+              : {}),
+          ...(current.qc_run.reviewDelivery ? { reviewDelivery: current.qc_run.reviewDelivery } : {}),
+        });
+        if (current.qc_run.status === 'succeeded' || current.qc_run.status === 'waiting_human') return;
+        if (current.qc_run.status === 'failed' || current.qc_run.status === 'cancelled') {
+          throw new Error(current.qc_run.errorMessage ?? `QC 已${current.qc_run.status === 'failed' ? '失败' : '取消'}`);
+        }
+      }
+      throw new Error('QC 仍在运行，可稍后重新提交或通过 QC Run 查询状态。');
+    } catch (reason) {
+      if (!stillSelected()) return;
+      setContinuityQc((current) => ({
+        ...current,
+        status: current.status === 'submitting' ? 'failed' : current.status,
+        reason: reason instanceof Error ? reason.message : String(reason),
+      }));
       setError(reason instanceof Error ? reason.message : String(reason));
     }
   };
@@ -939,9 +1044,9 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
               </div>
               <section className="shot-generation" aria-label="单镜生成">
                 <div>
-                  <span>SINGLE SHOT GENERATION</span>
-                  <strong>当前分镜生成</strong>
-                  <p>使用已保存提示词、实体参考图、上一镜尾帧与连续性约束，结果进入版本资产链。</p>
+                  <span>GENERATE + CONTINUITY QC</span>
+                  <strong>生成与连续性检查</strong>
+                  <p>生成结果进入版本资产链；QC 复用技术检查、VLM 与飞书人工闸门，不另建审批台。</p>
                 </div>
                 {(['image', 'video'] as const).map((kind) => {
                   const generation = shotGenerations[kind] ?? { status: 'idle' as const };
@@ -964,6 +1069,27 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
                     </div>
                   );
                 })}
+                <div className="generation-action">
+                  <button
+                    type="button"
+                    disabled={
+                      shotDirty ||
+                      shotSave === 'saving' ||
+                      !selectedQcAsset ||
+                      ['submitting', 'queued', 'running', 'waiting_provider'].includes(continuityQc.status)
+                    }
+                    title={selectedQcAsset ? '检查当前可读取的最新受控媒体资产' : '没有可读取的受控媒体；Mock 占位不参与 QC'}
+                    onClick={() => void handleContinuityQc()}
+                  >
+                    {['submitting', 'queued', 'running', 'waiting_provider'].includes(continuityQc.status) ? '检查中…' : '运行连续性 QC'}
+                  </button>
+                  <small data-status={continuityQc.status} title={continuityQc.reason}>
+                    {continuityQcStatusLabels[continuityQc.status]}
+                    {continuityQc.assetVersion ? ` · ${continuityQc.mediaType} v${continuityQc.assetVersion}` : selectedQcAsset ? ` · ${selectedQcAsset.type} v${selectedQcAsset.version}` : ''}
+                    {continuityQc.decision ? ` · ${continuityQc.decision}` : ''}
+                    {continuityQc.reviewDelivery === 'sent' ? ' · 已送飞书' : ''}
+                  </small>
+                </div>
               </section>
               <div className="inspector-actions">
                 <span>{shotDirty ? '有未保存修改 · ' : ''}首帧 {selectedShot.firstFrameAssetId ? '已绑定' : '未绑定'} · 尾帧 {selectedShot.lastFrameAssetId ? '已绑定' : '未绑定'}</span>

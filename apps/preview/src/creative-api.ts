@@ -7,6 +7,7 @@ import type {
   JobRecord,
   ProjectSpec,
   ProviderMode,
+  QcRunRecord,
   ShotSpec,
 } from '@onecrew/contracts';
 
@@ -71,6 +72,21 @@ export interface CreativeJobResponse {
   job: JobRecord;
   version: number;
   output?: unknown;
+}
+
+export interface CreativeContinuityQcAccepted {
+  qc_run_id: string;
+  status: QcRunRecord['status'];
+  status_url: string;
+  replayed: boolean;
+  source_asset_id: string;
+  source_asset_version: number;
+  media_type: 'image' | 'video';
+}
+
+export interface CreativeQcRunResponse {
+  qc_run: QcRunRecord;
+  version: number;
 }
 
 export type EpisodeEditPatch = Partial<
@@ -233,6 +249,27 @@ export async function submitCreativeShotGeneration(
 export async function getCreativeJob(jobId: string): Promise<CreativeJobResponse> {
   const response = await request(`/v1/jobs/${encodeURIComponent(jobId)}`);
   return json<CreativeJobResponse>(response);
+}
+
+export async function submitCreativeContinuityQc(
+  shotId: string,
+  expectedVersion: number,
+  assetId: string,
+): Promise<CreativeContinuityQcAccepted> {
+  const response = await request(`/v1/creative/shots/${encodeURIComponent(shotId)}/continuity-qc`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': `studio_continuity_qc_${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({ expectedVersion, assetId, route: 'primary', autoRemediate: true }),
+  });
+  return json<CreativeContinuityQcAccepted>(response);
+}
+
+export async function getCreativeQcRun(qcRunId: string): Promise<CreativeQcRunResponse> {
+  const response = await request(`/v1/qc/runs/${encodeURIComponent(qcRunId)}`);
+  return json<CreativeQcRunResponse>(response);
 }
 
 export async function submitCreativeGenerationBatch(

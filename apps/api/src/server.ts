@@ -248,6 +248,7 @@ const app = createApp({
     shotRepository: repositories.shots,
     generator: providerOrchestrator,
     batchGenerator: creativeGenerationBatchOrchestrator,
+    continuityQc: qcOrchestrator,
   },
   feishu: {
     security: {

@@ -156,6 +156,30 @@ curl --request POST \
 
 提交成功返回 HTTP 202 和 `status_url`。`expectedVersion` 过期返回 409，缺少幂等键返回 400，Provider 未配置返回 503。Mock 响应会明确标记 `mode: "mock"`；请通过 `GET /v1/jobs/:jobId` 跟踪最终状态。
 
+### 对已保存分镜运行连续性 QC
+
+该入口不接受客户端自定义检查词，而是从数据库中的分镜、角色、场景、道具和连续性快照生成可审计检查项，再复用统一 QC Orchestrator：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/shots/shot_demo_001/continuity-qc \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: shot-demo-001-continuity-qc-1' \
+  --data '{
+    "expectedVersion": 1,
+    "assetId": "asset_demo_001_v2",
+    "route": "primary",
+    "qualityAttempt": 1,
+    "autoRemediate": true
+  }'
+```
+
+`assetId` 可省略；服务会选择该镜头最新、未归档且已经写入受控 S3/MinIO 的图片或视频。显式资产必须属于同一项目和镜头。`mock://` 等占位 URI 会返回 400，不会伪装为完成了媒体检查。
+
+服务自动检查画面动作、镜头语言、角色身份/外观/服装、场景与光照、道具关系、上一镜尾帧衔接、镜头轴线和连续性备注；视频额外检查闪烁、形变、身份/背景跳变和对白表演。图片与视频使用各自的 codec、pixel format 和时长技术期望，避免用 H.264 规则误判 PNG/JPEG。
+
+响应为 HTTP 202，包含 `qc_run_id`、实际 `source_asset_id`、资产版本和媒体类型。后续使用 `GET /v1/qc/runs/:qcRunId` 读取技术报告、VLM 决策、修复结果或人工闸门。自动修复和飞书复核仍由统一 QC 流程处理，创作台没有第二套审批入口。
+
 ### 批量补齐、停止与重试
 
 批次不是浏览器中的临时循环。批次本身持久化到 PostgreSQL，每个分镜仍是独立的 Provider Job，因此保留幂等、预算闸门、取消、成本和资产版本链：

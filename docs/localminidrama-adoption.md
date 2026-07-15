@@ -30,7 +30,7 @@
 | 首尾帧提示词 | frame_prompts | FramePromptSpec + 首尾帧资产绑定 | 已验证 |
 | 分镜图片历史 | image_generations 完整历史 | AssetRecord 父版本链 + 镜头绑定 | 已验证 |
 | 视频生成历史 | video_generations | JobRecord + AssetRecord 版本链 | 已验证 |
-| 连续性快照 | continuity_snapshot | ContinuitySnapshot + QC 检查 | 生成请求已验证，QC 检查实现中 |
+| 连续性快照 | continuity_snapshot | ContinuitySnapshot + QC 检查 | 生成请求与 QC 已验证 |
 | 尾帧衔接 | 上一镜尾帧作为下一镜参考 | ShotSpec 首尾帧关系 + Provider reference assets | 生成请求已验证 |
 | 四宫格/多参考图 | sharp 切图、`@图片N` | Media 预处理 + Provider 多参考图契约 | 未开始 |
 | 图片/视频提示词编辑 | 分镜级编辑 | React 分镜编辑器 + 乐观版本 + 审计 | 已验证 |
@@ -91,6 +91,16 @@
 5. 停止只取消未完成项；重试只替换提交失败、执行失败或已取消项，已成功/已跳过项不重跑。
 6. 实跑验证了“Worker 停止时提交 → 取消排队 Job → 重试新 Job → 恢复 Worker → 批次成功”，并证明输出资产从 v2 升为 v3。
 7. React 创作台可补齐缺失图片/视频、刷新、停止和重试；桌面和 `390 × 844` 布局无溢出，控制台无错误。
+
+## 第五条纵向切片：连续性 QC 闭环
+
+1. 单镜 QC API 使用已持久化的分镜版本，过期版本返回 409，缺失幂等键失败关闭。
+2. 请求构建器从角色身份/外观/服装、场景、道具、光照、镜头轴线、上一镜尾帧和连续性备注自动生成检查项；视频额外检查时序稳定和对白表演。
+3. 只接受属于同一项目/镜头、已写入受控 S3/MinIO 的图片或视频；Mock 占位 URI 不被冒充为可检查媒体。
+4. 图片和视频使用独立技术期望；PNG/JPEG/WebP 不套用 H.264/YUV420P 默认规则，视频仍检查 codec、pixel format 与镜头时长。
+5. 复用现有 `QcOrchestrator`、BullMQ Worker、FFmpeg/ffprobe、VLM、QC Record 和飞书四动作人工闸门，不引入第二套 QC 或审批运行时。
+6. 实跑验证了三条分支：损坏图片明确失败；可解码但技术规则不符时生成持久化人工闸门；修正媒体类型规则后技术检查全绿、Mock VLM 决策 `pass` 并持久化 QC Record。
+7. React 创作台可对当前最新的受控媒体运行连续性 QC，并显示实际资产类型、版本和决策；桌面和 `390 × 844` 无横向溢出，干净会话控制台无错误或警告。
 
 ## 明确不复制的核心负担
 

@@ -1,6 +1,8 @@
 import {
+  assetRecordSchema,
   type CreativeProjectBundle,
   type ProviderRequest,
+  type QcRunRequest,
   creativeGenerationBatchSchema,
   episodeSpecSchema,
   sceneSpecSchema,
@@ -173,6 +175,23 @@ describe('creative routes', () => {
     });
     let currentShot = shot;
     let generationRequest: ProviderRequest | undefined;
+    let continuityQcRequest: QcRunRequest | undefined;
+    const qcAsset = assetRecordSchema.parse({
+      assetId: 'asset_api_qc',
+      projectId,
+      shotId,
+      type: 'image',
+      version: 1,
+      uri: 's3://onecrew/creative/api-qc.png',
+      provider: 'import',
+      model: 'source',
+      source: 'Imported creative source',
+      license: 'test fixture',
+      contentHash: '8'.repeat(64),
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+    });
     const batchRecord = creativeGenerationBatchSchema.parse({
       batchId: 'batch_api_generation',
       projectId,
@@ -227,7 +246,7 @@ describe('creative routes', () => {
           async importBundle() { throw new Error('not used'); },
           async getBundle() { return { ...bundle, episodes: [currentEpisode], entities: [currentEntity], shots: [currentShot] }; },
           async listProjects() { return [bundle.project]; },
-          async listAssets() { return []; },
+          async listAssets() { return [qcAsset]; },
           async getRecordVersions() {
             return {
               project: 1,
@@ -302,6 +321,17 @@ describe('creative routes', () => {
             return { value: { ...batchRecord, route: 'fallback' as const }, version: 3 };
           },
         },
+        continuityQc: {
+          async submit(request) {
+            continuityQcRequest = request;
+            return {
+              qcRunId: 'qc_api_continuity',
+              status: 'queued',
+              statusUrl: '/v1/qc/runs/qc_api_continuity',
+              replayed: false,
+            };
+          },
+        },
       },
     });
 
@@ -368,6 +398,34 @@ describe('creative routes', () => {
       payload: { expectedVersion: 1, kind: 'video', generationNonce: 11 },
     });
     expect(staleGeneration.statusCode).toBe(409);
+
+    const missingQcKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/shots/${shotId}/continuity-qc`,
+      payload: { expectedVersion: 2, assetId: qcAsset.assetId },
+    });
+    expect(missingQcKey.statusCode).toBe(400);
+
+    const continuityQc = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/shots/${shotId}/continuity-qc`,
+      headers: { 'idempotency-key': 'creative_qc_1' },
+      payload: { expectedVersion: 2, assetId: qcAsset.assetId, autoRemediate: true },
+    });
+    expect(continuityQc.statusCode).toBe(202);
+    expect(continuityQc.json()).toMatchObject({
+      qc_run_id: 'qc_api_continuity',
+      source_asset_id: qcAsset.assetId,
+      source_asset_version: 1,
+      media_type: 'image',
+    });
+    expect(continuityQcRequest).toMatchObject({
+      projectId,
+      shotId,
+      sourceAssetId: qcAsset.assetId,
+      mediaUri: qcAsset.uri,
+      criteria: expect.arrayContaining([expect.stringContaining('镜头语言与构图一致')]),
+    });
 
     const batch = await app.inject({
       method: 'POST',

@@ -1,6 +1,8 @@
 import {
+  buildCreativeContinuityQcRequest,
   buildCreativeShotGenerationRequest,
   convertLocalMiniDramaProject,
+  CreativeContinuityQcAssetError,
   exportLocalMiniDramaArchive,
   exportOneCrewArchive,
   importLocalMiniDramaArchive,
@@ -29,6 +31,7 @@ import {
   CreativeGenerationBatchValidationError,
   type CreativeGenerationBatchOrchestrator,
   type ProviderOrchestrator,
+  type QcOrchestrator,
 } from '@onecrew/workflows';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
@@ -49,6 +52,7 @@ export interface CreativeRouteOptions {
   shotRepository?: Pick<ShotRepository, 'get'>;
   generator?: Pick<ProviderOrchestrator, 'submit'>;
   batchGenerator?: Pick<CreativeGenerationBatchOrchestrator, 'submit' | 'get' | 'latest' | 'cancel' | 'retry'>;
+  continuityQc?: Pick<QcOrchestrator, 'submit'>;
 }
 
 const importOptionsSchema = z.object({
@@ -103,6 +107,13 @@ const shotGenerationSchema = z.object({
   kind: z.enum(['image', 'video']),
   route: z.enum(['primary', 'fallback']).default('primary'),
   generationNonce: z.number().int().nonnegative(),
+});
+const continuityQcSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  assetId: z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/).optional(),
+  route: z.enum(['primary', 'fallback']).default('primary'),
+  qualityAttempt: z.number().int().min(1).max(100).default(1),
+  autoRemediate: z.boolean().default(true),
 });
 const batchRetrySchema = z.object({ route: z.enum(['primary', 'fallback']).default('primary') });
 
@@ -302,6 +313,50 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
     }
   });
 
+  app.post('/v1/creative/shots/:shotId/continuity-qc', async (request, reply) => {
+    if (!options?.shotRepository || !options.continuityQc) {
+      return creativeError(reply, new CreativeContinuityQcNotConfiguredError());
+    }
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingCreativeContinuityQcIdempotencyKeyError();
+      const { shotId } = request.params as { shotId: string };
+      const input = continuityQcSchema.parse(request.body);
+      const shot = await options.shotRepository.get(shotId);
+      if (shot.version !== input.expectedVersion) {
+        throw new VersionConflictError(input.expectedVersion, shot.version);
+      }
+      const [bundle, assets] = await Promise.all([
+        options.repository.getBundle(shot.value.projectId),
+        options.repository.listAssets(shot.value.projectId),
+      ]);
+      const qcRequest = buildCreativeContinuityQcRequest({
+        bundle,
+        assets,
+        shotId,
+        ...(input.assetId ? { assetId: input.assetId } : {}),
+        route: input.route,
+        qualityAttempt: input.qualityAttempt,
+        autoRemediate: input.autoRemediate,
+      });
+      const selectedAsset = assets.find((asset) => asset.assetId === qcRequest.sourceAssetId);
+      if (!selectedAsset) throw new CreativeContinuityQcAssetError('Selected QC asset is missing');
+      const accepted = await options.continuityQc.submit(qcRequest, idempotencyKey);
+      reply.code(202);
+      return {
+        qc_run_id: accepted.qcRunId,
+        status: accepted.status,
+        status_url: accepted.statusUrl,
+        replayed: accepted.replayed,
+        source_asset_id: selectedAsset.assetId,
+        source_asset_version: selectedAsset.version,
+        media_type: qcRequest.mediaType,
+      };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
   app.post('/v1/creative/projects/:projectId/generation-batches', async (request, reply) => {
     if (!options?.batchGenerator) return creativeError(reply, new CreativeGenerationNotConfiguredError());
     try {
@@ -432,10 +487,24 @@ export class CreativeGenerationNotConfiguredError extends Error {
   }
 }
 
+export class CreativeContinuityQcNotConfiguredError extends Error {
+  constructor() {
+    super('Creative continuity QC is not configured');
+    this.name = 'CreativeContinuityQcNotConfiguredError';
+  }
+}
+
 export class MissingCreativeGenerationIdempotencyKeyError extends Error {
   constructor() {
     super('Idempotency-Key header is required for creative generation');
     this.name = 'MissingCreativeGenerationIdempotencyKeyError';
+  }
+}
+
+export class MissingCreativeContinuityQcIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for creative continuity QC');
+    this.name = 'MissingCreativeContinuityQcIdempotencyKeyError';
   }
 }
 
@@ -452,7 +521,8 @@ function creativeError(reply: FastifyReply, error: unknown) {
   if (
     error instanceof CreativeRoutesNotConfiguredError ||
     error instanceof CreativeMediaStoreNotConfiguredError ||
-    error instanceof CreativeGenerationNotConfiguredError
+    error instanceof CreativeGenerationNotConfiguredError ||
+    error instanceof CreativeContinuityQcNotConfiguredError
   ) {
     reply.code(503);
   } else if (error instanceof RecordNotFoundError) {
@@ -468,6 +538,8 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof InvalidCreativeAssetBindingError ||
     error instanceof CreativeGenerationBatchValidationError ||
     error instanceof MissingCreativeGenerationIdempotencyKeyError ||
+    error instanceof MissingCreativeContinuityQcIdempotencyKeyError ||
+    error instanceof CreativeContinuityQcAssetError ||
     error instanceof InvalidCreativeArchiveError ||
     /LocalMiniDrama|Archive|project\.json|declared media file|archive root|absolute path/i.test(message)
   ) {

@@ -232,7 +232,7 @@
 .inspector-grid { padding: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
 .inspector-grid .wide { grid-column: 1 / -1; }
 .inspector-grid textarea { min-height: 4.9rem; }
-.shot-generation { margin: 0 1rem 1rem; padding: 0.85rem; display: grid; grid-template-columns: minmax(0, 1fr) repeat(2, minmax(8rem, 0.42fr)); align-items: center; gap: 0.75rem; background: oklch(0.15 0.038 249 / 0.72); border: 1px solid var(--line); border-radius: 0.7rem; }
+.shot-generation { margin: 0 1rem 1rem; padding: 0.85rem; display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, minmax(7.5rem, 0.42fr)); align-items: center; gap: 0.75rem; background: oklch(0.15 0.038 249 / 0.72); border: 1px solid var(--line); border-radius: 0.7rem; }
 .shot-generation > div:first-child > span { color: var(--teal); font: 0.58rem ui-monospace, monospace; letter-spacing: 0.08em; }
 .shot-generation > div:first-child > strong { margin-top: 0.3rem; display: block; font-size: 0.77rem; }
 .shot-generation p { margin: 0.28rem 0 0; color: var(--muted); font-size: 0.61rem; line-height: 1.5; }
@@ -244,6 +244,7 @@
 .generation-action small[data-status="succeeded"] { color: var(--teal); }
 .generation-action small[data-status="failed"], .generation-action small[data-status="cancelled"] { color: var(--danger); }
 .generation-action small[data-status="waiting_human"] { color: var(--amber); }
+.generation-action small[data-status="waiting_provider"], .generation-action small[data-status="running"] { color: var(--teal); }
 .inspector-actions { padding: 0.8rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--line); }
 .inspector-actions > span { color: var(--muted); font: 0.62rem ui-monospace, monospace; }
 
@@ -323,6 +324,7 @@
   .episode-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .studio-main { padding-top: 1.3rem; }
   .batch-generation { grid-template-columns: 1fr; }
+  .shot-generation { grid-template-columns: minmax(0, 1fr) repeat(2, minmax(7.5rem, 0.5fr)); }
 }
 
 @media (max-width: 560px) {
