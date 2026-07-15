@@ -1,0 +1,29 @@
+{
+  "designSystemId": "design_shanhai_demo",
+  "version": "1.0.0",
+  "contentHash": "c590888620ae34c2d255004b6c1ba9ebdb329fbe9f0e8073aa53284120f65759",
+  "source": "open-design",
+  "sections": {
+    "color": "parsed",
+    "typography": "parsed",
+    "spacing": "parsed",
+    "layout": "parsed",
+    "components": "parsed",
+    "motion": "parsed",
+    "voice": "parsed",
+    "brand": "parsed",
+    "antiPatterns": "parsed"
+  },
+  "warnings": [],
+  "validatedAssets": [
+    "assets/LICENSES.md",
+    "assets/logo.svg",
+    "assets/star-texture.svg",
+    "templates/LICENSES.md",
+    "templates/end-card.svg",
+    "templates/lower-third.svg",
+    "templates/poster-frame.svg",
+    "templates/title-card.svg"
+  ],
+  "createdAt": "2026-07-15T11:21:45.694Z"
+}

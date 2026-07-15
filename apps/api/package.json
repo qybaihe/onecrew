@@ -1,0 +1,33 @@
+{
+  "name": "@onecrew/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx --env-file=../../.env watch src/server.ts",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "lint": "eslint src test *.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@onecrew/config": "workspace:*",
+    "@onecrew/contracts": "workspace:*",
+    "@onecrew/db": "workspace:*",
+    "@onecrew/domain": "workspace:*",
+    "@onecrew/feishu": "workspace:*",
+    "@onecrew/media": "workspace:*",
+    "@onecrew/providers": "workspace:*",
+    "@onecrew/workflows": "workspace:*",
+    "fastify": "5.10.0",
+    "ioredis": "5.11.1",
+    "pg": "8.22.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$id": "https://onecrew.local/schemas/ProviderCallback.schema.json",
+  "title": "ProviderCallback",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "externalJobId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "progress": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "output": {},
+        "actualCostCny": {
+          "type": "number",
+          "minimum": 0
+        },
+        "errorCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "errorMessage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "eventId",
+    "provider",
+    "externalJobId",
+    "state"
+  ],
+  "additionalProperties": false
+}

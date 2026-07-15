@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "onecrew-promo-spec/v1",
+  "trailer30": [
+    {
+      "startSec": 0,
+      "endSec": 3,
+      "purpose": "strongest conflict hook"
+    },
+    {
+      "startSec": 3,
+      "endSec": 8,
+      "purpose": "character and goal"
+    },
+    {
+      "startSec": 8,
+      "endSec": 18,
+      "purpose": "escalation"
+    },
+    {
+      "startSec": 18,
+      "endSec": 25,
+      "purpose": "twist or suspense"
+    },
+    {
+      "startSec": 25,
+      "endSec": 30,
+      "purpose": "title, logo, CTA"
+    }
+  ],
+  "teaser15Vertical": [
+    {
+      "startSec": 0,
+      "endSec": 2,
+      "purpose": "conflict line"
+    },
+    {
+      "startSec": 2,
+      "endSec": 9,
+      "purpose": "two high-information shots"
+    },
+    {
+      "startSec": 9,
+      "endSec": 12,
+      "purpose": "suspense"
+    },
+    {
+      "startSec": 12,
+      "endSec": 15,
+      "purpose": "title and CTA"
+    }
+  ],
+  "bumper6": [
+    {
+      "startSec": 0,
+      "endSec": 1,
+      "purpose": "visual impact"
+    },
+    {
+      "startSec": 1,
+      "endSec": 4,
+      "purpose": "core promise or twist"
+    },
+    {
+      "startSec": 4,
+      "endSec": 6,
+      "purpose": "logo and action"
+    }
+  ],
+  "motionPoster": {
+    "durationSec": 6,
+    "loop": true
+  },
+  "requiredTemplates": [
+    "templates/title-card.svg",
+    "templates/lower-third.svg",
+    "templates/end-card.svg",
+    "templates/poster-frame.svg"
+  ]
+}

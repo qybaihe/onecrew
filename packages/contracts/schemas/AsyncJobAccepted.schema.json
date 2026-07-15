@@ -1,0 +1,66 @@
+{
+  "$id": "https://onecrew.local/schemas/AsyncJobAccepted.schema.json",
+  "title": "AsyncJobAccepted",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "waiting_human"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "mock",
+        "sandbox",
+        "real"
+      ]
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "route": {
+      "type": "string",
+      "enum": [
+        "primary",
+        "fallback"
+      ]
+    },
+    "estimatedCostCny": {
+      "type": "number",
+      "minimum": 0
+    },
+    "statusUrl": {
+      "type": "string",
+      "pattern": "^\\/v1\\/jobs\\/.*"
+    },
+    "warning": {
+      "type": "string"
+    },
+    "replayed": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "jobId",
+    "status",
+    "mode",
+    "provider",
+    "route",
+    "estimatedCostCny",
+    "statusUrl",
+    "replayed"
+  ],
+  "additionalProperties": false
+}

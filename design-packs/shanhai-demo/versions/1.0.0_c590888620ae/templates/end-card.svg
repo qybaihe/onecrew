@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" role="img" aria-labelledby="title">
+  <title id="title">Shanhai Stars end-card template</title>
+  <rect width="1920" height="1080" fill="#07111F"/>
+  <circle cx="960" cy="400" r="150" fill="#11263A"/>
+  <path d="M960 274l18 44 48 3-37 31 12 46-41-25-41 25 12-46-37-31 48-3z" fill="#FFB703"/>
+  <path d="M824 470l92-106 44 54 40-48 96 100z" fill="#2EC4B6"/>
+  <text x="960" y="665" text-anchor="middle" fill="#F7F3E8" font-size="92" font-family="serif">山海星辰</text>
+  <rect x="700" y="746" width="520" height="90" rx="45" fill="#FFB703"/>
+  <text x="960" y="806" text-anchor="middle" fill="#07111F" font-size="34" font-family="system-ui, sans-serif">即刻启程</text>
+</svg>

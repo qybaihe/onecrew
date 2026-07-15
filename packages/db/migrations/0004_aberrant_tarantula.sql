@@ -1,0 +1,1 @@
+ALTER TABLE "renders" ALTER COLUMN "render_mode" SET DEFAULT 'preview';

@@ -1,0 +1,136 @@
+{
+  "$id": "https://onecrew.local/schemas/JobRecord.schema.json",
+  "title": "JobRecord",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "shotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "capability": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "design_compile",
+        "image",
+        "video",
+        "tts",
+        "lipsync",
+        "qc",
+        "remotion_preview",
+        "remotion_final",
+        "publish"
+      ]
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "mock",
+        "sandbox",
+        "real"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "waiting_human",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "attempt": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "estimatedCostCny": {
+      "type": "number",
+      "minimum": 0
+    },
+    "actualCostCny": {
+      "type": "number",
+      "minimum": 0
+    },
+    "latencyMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "errorCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "errorMessage": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "inputHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "outputAssetIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    }
+  },
+  "required": [
+    "jobId",
+    "projectId",
+    "capability",
+    "provider",
+    "model",
+    "mode",
+    "status",
+    "attempt",
+    "inputHash",
+    "outputAssetIds",
+    "createdAt",
+    "updatedAt"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,145 @@
+# OneCrew API
+
+本页只列当前已实现并测试的阶段 0～8 API，不以占位成功响应冒充完成。
+
+本地基址：`http://127.0.0.1:3000`。
+
+## 健康与就绪
+
+```text
+GET /healthz
+GET /readyz
+```
+
+`healthz` 只表示进程存活。`readyz` 实际探测 PostgreSQL、Redis 和 S3/MinIO；任一依赖不可用返回 503。
+
+## Provider 异步任务
+
+```text
+POST /v1/projects/:projectId/plan
+POST /v1/images/generate
+POST /v1/shots/generate
+POST /v1/audio/synthesize
+GET  /v1/jobs/:jobId
+POST /v1/jobs/:jobId/cancel
+POST /v1/providers/callback
+```
+
+四个提交端点都要求 `Content-Type: application/json` 和非空 `Idempotency-Key`。例如：
+
+```bash
+curl --request POST http://127.0.0.1:3000/v1/projects/prj_shanhai_demo/plan \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: demo-plan-001' \
+  --data '{
+    "operation": "script",
+    "prompt": "为山海星辰生成两场结构化短剧大纲",
+    "locale": "zh-CN",
+    "imageUris": [],
+    "maxOutputTokens": 500
+  }'
+```
+
+成功提交返回 HTTP 202：
+
+```json
+{
+  "job_id": "job_xxx",
+  "status": "queued",
+  "mode": "mock",
+  "provider": "mock-llm-primary",
+  "route": "primary",
+  "estimated_cost_cny": 0.0002,
+  "status_url": "/v1/jobs/job_xxx",
+  "replayed": false
+}
+```
+
+`status` 表示本次异步提交已排队或等待人工预算批准，不是任务最终结果。最终状态从 `status_url` 读取。复用相同幂等键和相同请求会返回原 Job 且 `replayed=true`；复用相同键但修改请求返回 409。
+
+取消只对未终态 Job 生效。已经 `succeeded` 或 `cancelled` 会返回 `already_terminal`。
+
+Provider 回调必须带：
+
+```text
+X-OneCrew-Timestamp: Unix 秒
+X-OneCrew-Signature: hex(HMAC-SHA256(secret, timestamp + "." + rawBody))
+```
+
+缺少 `PROVIDER_CALLBACK_SECRET` 时回调端点失败关闭；重复事件 ID 幂等接收，篡改正文或超过五分钟的请求会被拒绝。
+
+## 飞书控制面
+
+```text
+POST /v1/feishu/events
+POST /v1/feishu/card-actions
+```
+
+安全规则、六表配置和四动作字段见 [飞书配置](./feishu-setup.md)。非预算审批会用持久 LangGraph 检查点恢复工作流；预算审批会把对应 Job 从 `waiting_human` 转回队列。
+
+## Remotion 异步渲染
+
+```text
+POST /v1/renders
+GET  /v1/renders/:renderId
+POST /v1/renders/:renderId/cancel
+```
+
+`POST /v1/renders` 要求 `Content-Type: application/json` 和非空 `Idempotency-Key`，请求体为：
+
+```json
+{
+  "manifest": { "...": "符合 RenderManifest JSON Schema 的完整对象" },
+  "mode": "preview"
+}
+```
+
+`mode` 只能为 `preview` 或 `final`。首次提交返回 202 和 `status_url`；如语义 Manifest、渲染模式及代码版本全部命中成功缓存，则返回 200、`status=succeeded`、`cached=true`。渲染服务不使用 `renderId` 作为语义缓存内容，因此可将相同成片安全映射到新记录。
+
+状态为 `queued -> running -> succeeded | failed | cancelled`。Worker 只有在 Remotion 完成、媒体已写入受控 S3/MinIO 后才转入 `succeeded`。取消排队任务会删除 BullMQ Job；取消运行中任务会通过数据库轮询触发 Remotion cancel signal。
+
+可复现的本地 Manifest 来自 `@onecrew/remotion/fixtures`，六类实际 MP4 可用 `pnpm remotion:demo` 直接生成。详见 [Remotion 系统](./remotion.md)。
+
+## 自动质检
+
+```text
+POST /v1/qc/run
+GET  /v1/qc/runs/:qcRunId
+POST /v1/qc/runs/:qcRunId/cancel
+```
+
+提交必须带非空 `Idempotency-Key`，请求同时声明受控 `mediaUri`、媒体类型、ShotSpec/Design Pack 期望描述、VLM 检查项、技术期望、质量尝试次数与修复类型。返回 HTTP 202 和独立 `qc_run_id`，不会把一次 VLM 调用冒充完整 QC。
+
+Worker 先用 ffprobe/FFmpeg 做解码、流参数、黑屏、冻结、亮度突变、静音、响度/峰值和字幕时间边界检查，再通过 Provider Gateway 获取严格 JSON VLM 结果。两层结果和失败代码都持久化到 `qc_runs`/`qc_records`。
+
+内容质量只允许一次自动修复；第二次同类失败、合规风险、双 Provider 不可用或缺少安全修复来源会进入 `waiting_human`，生成且持久化只有 `approve`、`regenerate`、`switch_provider`、`manual` 四个动作的卡片。飞书回调成功后仍遵循目标版本和事件幂等校验。完整策略见 [自动质检](./qc.md)。
+
+## 双语本地化
+
+```text
+POST /v1/localizations
+GET  /v1/localizations/:localizationRunId
+POST /v1/localizations/:localizationRunId/cancel
+```
+
+提交中文 `LocalePack`、共享镜头、英语目标声音映射和节奏参数，要求非空 `Idempotency-Key`。Worker 通过 Provider Gateway 完成结构化翻译和逐句 TTS，再按 TTS 返回的真实 `durationMs` 计算英文字幕区间和镜头停留；输出仍引用同一组镜头媒体 URI。状态为 `queued -> running -> waiting_provider -> succeeded | failed | cancelled`。
+
+## 发布包与实验台账
+
+```text
+POST /v1/publishes
+GET  /v1/publishes/:publishId
+GET  /v1/projects/:projectId/experiments
+```
+
+发布请求必须包含中英文 Locale Pack 和至少 8 个已渲染宣发 Creative。当前经审计的交付模式固定为 `package_export`：生成可校验 ZIP、媒体清单、Locale Pack、实验种子和许可证说明，并在本地 PostgreSQL 写入实验记录；存在真实飞书凭证时同步“出海实验”表，否则明确记录 `feishuWriteback=mock_outbox`。详见 [双语与发布](./localization-publishing.md)。
+
+## 错误约定
+
+- `400`：请求契约错误或缺少幂等键。
+- `401`：Provider 回调签名失败。
+- `403`：飞书操作者未授权。
+- `404`：本地资源不存在。
+- `409`：幂等冲突、版本冲突或动作处理中。
+- `503`：必要配置或依赖未就绪。
+- `500`：未分类服务端错误；响应不回显 Secret 或原始 Provider 错误正文。

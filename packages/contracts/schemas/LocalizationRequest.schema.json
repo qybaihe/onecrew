@@ -1,0 +1,326 @@
+{
+  "$id": "https://onecrew.local/schemas/LocalizationRequest.schema.json",
+  "title": "LocalizationRequest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "sourceLocalePack": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "locale": {
+          "type": "string",
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sourceLocale": {
+          "type": "string",
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ]
+        },
+        "translationMode": {
+          "type": "string",
+          "enum": [
+            "source",
+            "mock",
+            "sandbox",
+            "real",
+            "manual"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "sourceLineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "shotId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "speaker": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 5000
+              },
+              "startMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "endMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "voiceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "audioAssetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "audioUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "audioDurationMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "translationNotes": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "lineId",
+              "shotId",
+              "speaker",
+              "text",
+              "startMs",
+              "endMs",
+              "voiceId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "cta": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "marketingCopy": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "shotTimingAdjustments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "shotId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "sourceStartFrame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sourceEndFrame": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "localizedStartFrame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "localizedEndFrame": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "shotId",
+              "sourceStartFrame",
+              "sourceEndFrame",
+              "localizedStartFrame",
+              "localizedEndFrame"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "projectId",
+        "locale",
+        "title",
+        "lines",
+        "cta",
+        "marketingCopy"
+      ],
+      "additionalProperties": false
+    },
+    "sharedShots": {
+      "minItems": 1,
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "shotId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "videoUri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "inFrame": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "outFrame": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "crop": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "scale": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "scale"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "shotId",
+          "videoUri",
+          "inFrame",
+          "outFrame"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "targetLocale": {
+      "type": "string",
+      "const": "en-US"
+    },
+    "targetVoiceBySourceVoice": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "route": {
+      "default": "primary",
+      "type": "string",
+      "enum": [
+        "primary",
+        "fallback"
+      ]
+    },
+    "fps": {
+      "default": 30,
+      "type": "number",
+      "const": 30
+    },
+    "lineGapMs": {
+      "default": 250,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5000
+    },
+    "leadInMs": {
+      "default": 350,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5000
+    },
+    "tailMs": {
+      "default": 350,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5000
+    }
+  },
+  "required": [
+    "projectId",
+    "sourceLocalePack",
+    "sharedShots",
+    "targetLocale",
+    "targetVoiceBySourceVoice",
+    "route",
+    "fps",
+    "lineGapMs",
+    "leadInMs",
+    "tailMs"
+  ],
+  "additionalProperties": false
+}

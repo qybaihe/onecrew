@@ -1,0 +1,113 @@
+{
+  "$id": "https://onecrew.local/schemas/ShotSpec.schema.json",
+  "title": "ShotSpec",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "shotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "sequence": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "durationSec": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 120
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "sceneId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "action": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000
+    },
+    "camera": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "dialogueZh": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000
+    },
+    "negativePrompt": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "referenceAssetIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "importance": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "hero"
+      ]
+    },
+    "closeupDialogue": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "generating",
+        "qc",
+        "approved",
+        "failed"
+      ]
+    }
+  },
+  "required": [
+    "shotId",
+    "projectId",
+    "sequence",
+    "durationSec",
+    "characters",
+    "sceneId",
+    "action",
+    "camera",
+    "prompt",
+    "referenceAssetIds",
+    "importance",
+    "closeupDialogue",
+    "status"
+  ],
+  "additionalProperties": false
+}

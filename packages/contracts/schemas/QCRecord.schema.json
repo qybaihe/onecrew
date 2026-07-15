@@ -1,0 +1,388 @@
+{
+  "$id": "https://onecrew.local/schemas/QCRecord.schema.json",
+  "title": "QCRecord",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "qcId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "qcRunId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "shotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "scores": {
+      "type": "object",
+      "properties": {
+        "character": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "clothing": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "background": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "action": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "flicker": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lipsync": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "subtitle": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "brand": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "safeArea": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "audio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "compliance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "character",
+        "clothing",
+        "background",
+        "action",
+        "flicker",
+        "lipsync",
+        "subtitle",
+        "brand",
+        "safeArea",
+        "audio",
+        "compliance"
+      ],
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "regenerate",
+        "switch_model",
+        "manual"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "retryPatch": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "technicalReport": {
+      "type": "object",
+      "properties": {
+        "passed": {
+          "type": "boolean"
+        },
+        "probe": {
+          "type": "object",
+          "properties": {
+            "durationSec": {
+              "type": "number",
+              "minimum": 0
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "fps": {
+              "type": "number",
+              "minimum": 0
+            },
+            "videoCodec": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pixelFormat": {
+              "type": "string",
+              "minLength": 1
+            },
+            "colorRange": {
+              "type": "string",
+              "minLength": 1
+            },
+            "colorSpace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "audioCodec": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sampleRate": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "channels": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "bitRate": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "durationSec",
+            "width",
+            "height",
+            "fps",
+            "videoCodec",
+            "pixelFormat"
+          ],
+          "additionalProperties": false
+        },
+        "blackSegments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "startSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "endSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "durationSec": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "startSec",
+              "endSec",
+              "durationSec"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "freezeSegments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "startSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "endSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "durationSec": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "startSec",
+              "endSec",
+              "durationSec"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "silenceSegments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "startSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "endSec": {
+                "type": "number",
+                "minimum": 0
+              },
+              "durationSec": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "startSec",
+              "endSec",
+              "durationSec"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "integratedLufs": {
+          "type": "number"
+        },
+        "truePeakDbtp": {
+          "type": "number"
+        },
+        "maxBrightnessJump": {
+          "type": "number",
+          "minimum": 0
+        },
+        "checks": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "passed": {
+                "type": "boolean"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "actual": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "expected": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "passed",
+              "severity",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "analyzedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "passed",
+        "probe",
+        "blackSegments",
+        "freezeSegments",
+        "silenceSegments",
+        "checks",
+        "analyzedAt"
+      ],
+      "additionalProperties": false
+    },
+    "semanticProviderJobId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    }
+  },
+  "required": [
+    "qcId",
+    "projectId",
+    "scores",
+    "decision",
+    "reason",
+    "createdAt"
+  ],
+  "additionalProperties": false
+}

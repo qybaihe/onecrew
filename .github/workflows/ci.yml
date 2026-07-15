@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: cp .env.example .env
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm readme:check
+      - run: pnpm infra:config
+      - run: pnpm infra:up
+      - run: pnpm contracts:generate
+      - run: pnpm db:check
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm design:compile
+      - run: pnpm providers:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - run: pnpm test:integration
+      - run: pnpm build
+
+      - name: Infrastructure logs on failure
+        if: failure()
+        run: pnpm infra:logs
+
+      - name: Stop infrastructure
+        if: always()
+        run: pnpm infra:down

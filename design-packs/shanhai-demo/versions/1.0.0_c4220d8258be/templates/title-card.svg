@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" role="img" aria-labelledby="title">
+  <title id="title">Shanhai Stars title-card template</title>
+  <rect width="1920" height="1080" fill="#07111F"/>
+  <path d="M115 740h1040" stroke="#2EC4B6" stroke-width="10"/>
+  <rect x="115" y="318" width="1260" height="350" rx="32" fill="#11263A" fill-opacity="0.92"/>
+  <text x="180" y="472" fill="#FFB703" font-size="42" font-family="system-ui, sans-serif">ONECREW ORIGINAL</text>
+  <text x="180" y="596" fill="#F7F3E8" font-size="112" font-family="serif">山海星辰</text>
+</svg>

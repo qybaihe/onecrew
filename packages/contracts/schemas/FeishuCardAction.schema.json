@@ -1,0 +1,68 @@
+{
+  "$id": "https://onecrew.local/schemas/FeishuCardAction.schema.json",
+  "title": "FeishuCardAction",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "regenerate",
+        "switch_provider",
+        "manual"
+      ]
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "targetType": {
+      "type": "string",
+      "enum": [
+        "story",
+        "design",
+        "shot",
+        "asset",
+        "job",
+        "render",
+        "release"
+      ]
+    },
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "expectedVersion": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "actorOpenId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    }
+  },
+  "required": [
+    "action",
+    "projectId",
+    "targetType",
+    "targetId",
+    "expectedVersion",
+    "actorOpenId",
+    "eventId"
+  ],
+  "additionalProperties": false
+}

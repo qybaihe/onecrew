@@ -1,0 +1,394 @@
+{
+  "$id": "https://onecrew.local/schemas/ProviderRequest.schema.json",
+  "title": "ProviderRequest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "route": {
+          "default": "primary",
+          "type": "string",
+          "enum": [
+            "primary",
+            "fallback"
+          ]
+        },
+        "generationNonce": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "capability": {
+          "type": "string",
+          "const": "llm"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "script",
+            "translate",
+            "marketing_copy"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "locale": {
+          "type": "string",
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ]
+        },
+        "imageUris": {
+          "default": [],
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "outputSchema": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "maxOutputTokens": {
+          "default": 4000,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 32000
+        }
+      },
+      "required": [
+        "projectId",
+        "route",
+        "capability",
+        "operation",
+        "prompt",
+        "locale",
+        "imageUris",
+        "maxOutputTokens"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "route": {
+          "default": "primary",
+          "type": "string",
+          "enum": [
+            "primary",
+            "fallback"
+          ]
+        },
+        "generationNonce": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "capability": {
+          "type": "string",
+          "const": "image"
+        },
+        "shotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "negativePrompt": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "referenceUris": {
+          "default": [],
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 4096
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 4096
+        },
+        "count": {
+          "default": 1,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "projectId",
+        "route",
+        "capability",
+        "prompt",
+        "referenceUris",
+        "width",
+        "height",
+        "count"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "route": {
+          "default": "primary",
+          "type": "string",
+          "enum": [
+            "primary",
+            "fallback"
+          ]
+        },
+        "generationNonce": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "capability": {
+          "type": "string",
+          "const": "video"
+        },
+        "shotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20000
+        },
+        "referenceImageUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "lastFrameUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "durationSec": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "aspectRatio": {
+          "type": "string",
+          "enum": [
+            "16:9",
+            "9:16",
+            "1:1"
+          ]
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "projectId",
+        "route",
+        "capability",
+        "shotId",
+        "prompt",
+        "durationSec",
+        "aspectRatio"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "route": {
+          "default": "primary",
+          "type": "string",
+          "enum": [
+            "primary",
+            "fallback"
+          ]
+        },
+        "generationNonce": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "capability": {
+          "type": "string",
+          "const": "tts"
+        },
+        "lineId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40000
+        },
+        "locale": {
+          "type": "string",
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ]
+        },
+        "voiceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "outputFormat": {
+          "default": "mp3_44100_128",
+          "type": "string",
+          "enum": [
+            "mp3_44100_128",
+            "pcm_24000",
+            "wav_44100"
+          ]
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "projectId",
+        "route",
+        "capability",
+        "lineId",
+        "text",
+        "locale",
+        "voiceId",
+        "outputFormat"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "route": {
+          "default": "primary",
+          "type": "string",
+          "enum": [
+            "primary",
+            "fallback"
+          ]
+        },
+        "generationNonce": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "capability": {
+          "type": "string",
+          "const": "vlm"
+        },
+        "shotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "mediaUri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": [
+            "image",
+            "video"
+          ]
+        },
+        "criteria": {
+          "minItems": 1,
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "expectedDescription": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        }
+      },
+      "required": [
+        "projectId",
+        "route",
+        "capability",
+        "mediaUri",
+        "mediaType",
+        "criteria",
+        "expectedDescription"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

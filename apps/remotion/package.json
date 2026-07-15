@@ -1,0 +1,53 @@
+{
+  "name": "@onecrew/remotion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server/index.js",
+  "types": "./dist/server/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./preview": {
+      "types": "./dist/preview/PreviewPlayer.d.ts",
+      "import": "./dist/preview/PreviewPlayer.js"
+    },
+    "./fixtures": {
+      "types": "./dist/fixtures.d.ts",
+      "import": "./dist/fixtures.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src scripts test *.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "studio": "remotion studio src/entry.tsx",
+    "render:demo": "tsx scripts/render-demo.ts",
+    "render:final-smoke": "tsx scripts/render-final-smoke.ts",
+    "render:stage7-smoke": "tsx scripts/stage7-process-smoke.ts",
+    "render:stage8-e2e": "ONECREW_RENDER_MODE=final ONECREW_SMOKE_VERSION=stage8_mock_e2e_v5 tsx scripts/stage7-process-smoke.ts ../../outputs/stage8-mock-e2e"
+  },
+  "dependencies": {
+    "@onecrew/config": "workspace:*",
+    "@onecrew/contracts": "workspace:*",
+    "@onecrew/design-adapter": "workspace:*",
+    "@onecrew/domain": "workspace:*",
+    "@onecrew/localization": "workspace:*",
+    "@onecrew/media": "workspace:*",
+    "@remotion/bundler": "4.0.489",
+    "@remotion/player": "4.0.489",
+    "@remotion/renderer": "4.0.489",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "remotion": "4.0.489",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3"
+  }
+}

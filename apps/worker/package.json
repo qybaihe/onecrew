@@ -1,0 +1,27 @@
+{
+  "name": "@onecrew/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx --env-file=../../.env watch src/server.ts",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@onecrew/config": "workspace:*",
+    "@onecrew/db": "workspace:*",
+    "@onecrew/domain": "workspace:*",
+    "@onecrew/feishu": "workspace:*",
+    "@onecrew/media": "workspace:*",
+    "@onecrew/providers": "workspace:*",
+    "@onecrew/qc": "workspace:*",
+    "@onecrew/remotion": "workspace:*",
+    "@onecrew/workflows": "workspace:*"
+  }
+}

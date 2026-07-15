@@ -1,0 +1,20 @@
+{
+  "name": "@onecrew/publishing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@onecrew/contracts": "workspace:*",
+    "fflate": "0.8.3"
+  }
+}

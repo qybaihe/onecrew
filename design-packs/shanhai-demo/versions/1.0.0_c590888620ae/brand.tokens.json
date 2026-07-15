@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "onecrew-brand-tokens/v1",
+  "colors": {
+    "primary": "#2EC4B6",
+    "secondary": "#FFB703",
+    "background": "#07111F",
+    "text": "#F7F3E8",
+    "muted": "#A6B5C5",
+    "surface": "#11263A",
+    "success": "#38B000",
+    "warning": "#FFB703",
+    "danger": "#EF476F"
+  },
+  "typography": {
+    "zhFamily": "PingFang SC",
+    "enFamily": "Inter",
+    "displayFamily": "Songti SC",
+    "fallback": [
+      "system-ui",
+      "sans-serif"
+    ],
+    "bodySizePx": 32,
+    "subtitleSizePx": 44,
+    "weights": [
+      400,
+      600,
+      700
+    ],
+    "lineHeight": 1.35
+  },
+  "spacing": {
+    "unitPx": 8,
+    "scale": [
+      0,
+      8,
+      16,
+      24,
+      32,
+      48,
+      64,
+      96
+    ],
+    "safeHorizontalPercent": 6,
+    "safeVerticalPercent": 8
+  },
+  "layout": {
+    "gridColumns": 12,
+    "maxWidthPx": 1920,
+    "portraitStrategy": "keep the hero subject inside the center 56 percent and reflow titles above the lower subtitle safe area",
+    "squareStrategy": "preserve the hero subject and place the CTA in a dedicated bottom band"
+  },
+  "components": {
+    "titleCard": "warm serif title over a deep-blue field with a restrained teal horizon line",
+    "lowerThird": "compact translucent navy plate with a teal leading rule",
+    "subtitle": "no more than two lines on a high-contrast navy plate",
+    "cta": "one amber action line paired with the logo lockup",
+    "logo": "use the mountain-star mark without glow or decorative distortion"
+  },
+  "voice": {
+    "zh": "克制、辽阔、有人情味，短句优先",
+    "en": "cinematic, concise, human, and locally idiomatic"
+  },
+  "brand": {
+    "nameZh": "山海星辰",
+    "nameEn": "Shanhai Stars",
+    "logoAsset": "assets/logo.svg",
+    "logoClearspacePx": 32
+  },
+  "antiPatterns": [
+    "未授权素材或来源不明的字体",
+    "牺牲字幕安全区换取画面冲击",
+    "无叙事作用的粒子、光晕与镜头抖动",
+    "逐字直译的英文宣传语",
+    "把 Open Design 预览误当成正式视频渲染"
+  ]
+}

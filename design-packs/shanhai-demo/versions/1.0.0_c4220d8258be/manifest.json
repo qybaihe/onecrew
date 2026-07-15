@@ -1,0 +1,22 @@
+{
+  "designSystemId": "design_shanhai_demo",
+  "version": "1.0.0",
+  "designMdUri": "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/DESIGN.md",
+  "brandTokensUri": "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/brand.tokens.json",
+  "motionTokensUri": "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/motion.tokens.json",
+  "promoSpecUri": "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/promo.spec.json",
+  "assetUris": [
+    "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/assets/LICENSES.md",
+    "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/assets/logo.svg",
+    "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/assets/star-texture.svg",
+    "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/templates/end-card.svg",
+    "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/templates/lower-third.svg",
+    "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/templates/poster-frame.svg",
+    "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/templates/title-card.svg"
+  ],
+  "source": "open-design",
+  "sourceLicense": "Original OneCrew shanhai-demo design system; repository project license applies.",
+  "createdAt": "2026-07-15T11:19:57.495Z",
+  "contentHash": "c4220d8258bec7d20e48b10daaab6e02485d198c75e6b00fff9b0b14899f2b5e",
+  "compileReportUri": "design-pack://design_shanhai_demo/versions/1.0.0_c4220d8258be/compile-report.json"
+}

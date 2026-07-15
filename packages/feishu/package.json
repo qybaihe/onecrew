@@ -1,0 +1,29 @@
+{
+  "name": "@onecrew/feishu",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src scripts test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "setup:base": "node --env-file-if-exists=../../.env --import tsx scripts/setup-base.ts"
+  },
+  "dependencies": {
+    "@onecrew/config": "workspace:*",
+    "@onecrew/contracts": "workspace:*",
+    "@onecrew/db": "workspace:*",
+    "@onecrew/domain": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

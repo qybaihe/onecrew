@@ -1,0 +1,124 @@
+{
+  "$id": "https://onecrew.local/schemas/ExperimentRecord.schema.json",
+  "title": "ExperimentRecord",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "experimentId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "creativeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "episode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "language": {
+      "type": "string",
+      "enum": [
+        "zh-CN",
+        "en-US"
+      ]
+    },
+    "platform": {
+      "type": "string",
+      "enum": [
+        "抖音",
+        "TikTok",
+        "YouTube",
+        "其他"
+      ]
+    },
+    "hook": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "coverUri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "spend": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0
+    },
+    "retention3s": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "retention15s": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "ctr": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "conversion": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "roas": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0
+    },
+    "recommendation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    }
+  },
+  "required": [
+    "experimentId",
+    "projectId",
+    "creativeId",
+    "episode",
+    "language",
+    "platform",
+    "hook",
+    "spend",
+    "retention3s",
+    "retention15s",
+    "ctr",
+    "conversion",
+    "roas",
+    "recommendation",
+    "createdAt",
+    "updatedAt"
+  ],
+  "additionalProperties": false
+}

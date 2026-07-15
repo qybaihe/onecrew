@@ -1,0 +1,95 @@
+{
+  "$id": "https://onecrew.local/schemas/CampaignCreative.schema.json",
+  "title": "CampaignCreative",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "creativeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "zh-CN",
+        "en-US"
+      ]
+    },
+    "compositionId": {
+      "type": "string",
+      "enum": [
+        "Trailer30",
+        "Teaser15Vertical",
+        "Bumper6",
+        "MotionPoster"
+      ]
+    },
+    "aspectRatio": {
+      "type": "string",
+      "enum": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ]
+    },
+    "renderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "mediaUri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "hook": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "cta": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "coverUri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "platforms": {
+      "minItems": 1,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "抖音",
+          "TikTok",
+          "YouTube",
+          "其他"
+        ]
+      }
+    }
+  },
+  "required": [
+    "creativeId",
+    "projectId",
+    "locale",
+    "compositionId",
+    "aspectRatio",
+    "renderId",
+    "mediaUri",
+    "hook",
+    "cta",
+    "platforms"
+  ],
+  "additionalProperties": false
+}

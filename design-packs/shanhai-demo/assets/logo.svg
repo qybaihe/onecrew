@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Shanhai Stars logo</title>
+  <desc id="desc">A star rising between layered mountain peaks.</desc>
+  <rect width="512" height="512" rx="112" fill="#07111F"/>
+  <path d="M256 82l16 39 42 3-32 27 10 41-36-22-36 22 10-41-32-27 42-3z" fill="#FFB703"/>
+  <path d="M76 364l112-147 68 89 55-72 125 130z" fill="#2EC4B6"/>
+  <path d="M76 364l112-98 68 62 55-42 125 78z" fill="#F7F3E8" fill-opacity="0.3"/>
+  <path d="M96 395h320" stroke="#FFB703" stroke-width="12" stroke-linecap="round"/>
+</svg>

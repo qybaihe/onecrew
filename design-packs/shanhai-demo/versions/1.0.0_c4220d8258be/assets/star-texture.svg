@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" role="img" aria-labelledby="title">
+  <title id="title">Sparse star texture</title>
+  <rect width="1920" height="1080" fill="#07111F"/>
+  <g fill="#F7F3E8" opacity="0.7">
+    <circle cx="190" cy="172" r="3"/><circle cx="420" cy="96" r="2"/><circle cx="698" cy="214" r="4"/>
+    <circle cx="1010" cy="126" r="2"/><circle cx="1274" cy="248" r="3"/><circle cx="1570" cy="108" r="4"/>
+    <circle cx="1768" cy="310" r="2"/><circle cx="1450" cy="438" r="2"/><circle cx="880" cy="354" r="3"/>
+  </g>
+  <path d="M0 850L320 620l250 174 280-286 330 322 270-230 470 250v230H0z" fill="#11263A"/>
+  <path d="M0 908l420-202 270 162 310-184 380 206 280-144 260 156v178H0z" fill="#2EC4B6" opacity="0.32"/>
+</svg>

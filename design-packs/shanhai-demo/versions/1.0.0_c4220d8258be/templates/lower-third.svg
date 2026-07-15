@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" role="img" aria-labelledby="title">
+  <title id="title">Shanhai Stars lower-third template</title>
+  <rect x="96" y="816" width="770" height="150" rx="22" fill="#07111F" fill-opacity="0.88"/>
+  <rect x="96" y="816" width="12" height="150" rx="6" fill="#2EC4B6"/>
+  <text x="148" y="882" fill="#F7F3E8" font-size="44" font-family="system-ui, sans-serif">角色姓名</text>
+  <text x="148" y="936" fill="#A6B5C5" font-size="28" font-family="system-ui, sans-serif">CHARACTER ROLE</text>
+</svg>

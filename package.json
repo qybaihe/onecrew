@@ -1,0 +1,51 @@
+{
+  "name": "onecrew",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=22.13.0",
+    "pnpm": ">=10.13.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "readme:check": "node scripts/check-readmes.mjs",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test:unit",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "infra:config": "docker compose -f infra/docker-compose.yml config",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:status": "docker compose -f infra/docker-compose.yml ps",
+    "infra:logs": "docker compose -f infra/docker-compose.yml logs",
+    "contracts:generate": "pnpm --filter @onecrew/contracts schemas:generate",
+    "db:generate": "pnpm --filter @onecrew/db db:generate",
+    "db:check": "pnpm --filter @onecrew/db db:check",
+    "db:migrate": "pnpm --filter @onecrew/db db:migrate",
+    "db:seed": "pnpm --filter @onecrew/db db:seed",
+    "feishu:setup": "pnpm --filter @onecrew/feishu setup:base",
+    "design:compile": "pnpm --filter @onecrew/design-adapter compile:demo",
+    "providers:check": "pnpm --filter @onecrew/providers config:check",
+    "remotion:studio": "pnpm --filter @onecrew/remotion studio",
+    "remotion:demo": "pnpm --filter @onecrew/remotion render:demo",
+    "remotion:final-smoke": "pnpm --filter @onecrew/remotion render:final-smoke",
+    "demo:mock-e2e": "pnpm --filter @onecrew/remotion render:stage8-e2e",
+    "preview:dev": "pnpm --filter @onecrew/preview dev",
+    "start:api": "pnpm --filter @onecrew/api start",
+    "start:worker": "pnpm --filter @onecrew/worker start"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.1",
+    "eslint": "10.7.0",
+    "turbo": "2.10.5",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
+    "vitest": "4.1.10"
+  }
+}

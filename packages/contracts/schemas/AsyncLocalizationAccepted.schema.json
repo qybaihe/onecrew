@@ -1,0 +1,40 @@
+{
+  "$id": "https://onecrew.local/schemas/AsyncLocalizationAccepted.schema.json",
+  "title": "AsyncLocalizationAccepted",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "localizationRunId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "waiting_provider",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "statusUrl": {
+      "type": "string",
+      "pattern": "^\\/v1\\/localizations\\/.*"
+    },
+    "replayed": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "localizationRunId",
+    "status",
+    "statusUrl",
+    "replayed"
+  ],
+  "additionalProperties": false
+}

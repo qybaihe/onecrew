@@ -1,0 +1,31 @@
+{
+  "name": "@onecrew/design-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src scripts test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "compile:demo": "tsx scripts/compile-demo.ts"
+  },
+  "dependencies": {
+    "@onecrew/contracts": "workspace:*",
+    "@onecrew/domain": "workspace:*",
+    "zod": "4.4.3"
+  }
+}

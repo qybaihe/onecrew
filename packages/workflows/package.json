@@ -1,0 +1,38 @@
+{
+  "name": "@onecrew/workflows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@onecrew/config": "workspace:*",
+    "@onecrew/contracts": "workspace:*",
+    "@onecrew/db": "workspace:*",
+    "@onecrew/domain": "workspace:*",
+    "@onecrew/feishu": "workspace:*",
+    "@onecrew/localization": "workspace:*",
+    "@onecrew/media": "workspace:*",
+    "@onecrew/providers": "workspace:*",
+    "@onecrew/publishing": "workspace:*",
+    "@onecrew/qc": "workspace:*",
+    "@langchain/core": "1.2.3",
+    "@langchain/langgraph": "1.4.8",
+    "@langchain/langgraph-checkpoint-postgres": "1.0.4",
+    "bullmq": "5.80.3",
+    "zod": "4.4.3"
+  }
+}

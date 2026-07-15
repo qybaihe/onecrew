@@ -1,0 +1,248 @@
+{
+  "$id": "https://onecrew.local/schemas/LocalePackRecord.schema.json",
+  "title": "LocalePackRecord",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "localePackId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "locale": {
+      "type": "string",
+      "enum": [
+        "zh-CN",
+        "en-US"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "pack": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "locale": {
+          "type": "string",
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sourceLocale": {
+          "type": "string",
+          "enum": [
+            "zh-CN",
+            "en-US"
+          ]
+        },
+        "translationMode": {
+          "type": "string",
+          "enum": [
+            "source",
+            "mock",
+            "sandbox",
+            "real",
+            "manual"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "sourceLineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "shotId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "speaker": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 5000
+              },
+              "startMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "endMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "voiceId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "audioAssetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "audioUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "audioDurationMs": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "translationNotes": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "lineId",
+              "shotId",
+              "speaker",
+              "text",
+              "startMs",
+              "endMs",
+              "voiceId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "cta": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "marketingCopy": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "shotTimingAdjustments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "shotId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "sourceStartFrame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sourceEndFrame": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "localizedStartFrame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "localizedEndFrame": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "shotId",
+              "sourceStartFrame",
+              "sourceEndFrame",
+              "localizedStartFrame",
+              "localizedEndFrame"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "projectId",
+        "locale",
+        "title",
+        "lines",
+        "cta",
+        "marketingCopy"
+      ],
+      "additionalProperties": false
+    },
+    "sourceLocalizationRunId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    }
+  },
+  "required": [
+    "localePackId",
+    "projectId",
+    "locale",
+    "version",
+    "pack",
+    "contentHash",
+    "createdAt"
+  ],
+  "additionalProperties": false
+}

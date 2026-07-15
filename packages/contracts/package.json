@@ -1,0 +1,25 @@
+{
+  "name": "@onecrew/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src scripts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
+    "schemas:generate": "tsx scripts/generate-json-schemas.ts"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  }
+}

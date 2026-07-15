@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "onecrew-motion-tokens/v1",
+  "fps": 30,
+  "durationFrames": {
+    "fast": 6,
+    "normal": 12,
+    "slow": 24
+  },
+  "easing": "cubic-bezier(0.22, 1, 0.36, 1)",
+  "defaultTransition": "cross-dissolve",
+  "maxMotionDensity": 0.4,
+  "logoReveal": "opacity with a restrained 1.02-to-1 scale settle",
+  "reducedMotionFallback": "hard cut followed by a two-frame opacity settle"
+}

@@ -1,0 +1,108 @@
+{
+  "$id": "https://onecrew.local/schemas/ProjectSpec.schema.json",
+  "title": "ProjectSpec",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "nameZh": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "nameEn": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "synopsis": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "genres": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+      }
+    },
+    "ownerOpenId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "locales": {
+      "minItems": 1,
+      "maxItems": 2,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "zh-CN",
+          "en-US"
+        ]
+      }
+    },
+    "aspectRatios": {
+      "minItems": 1,
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ]
+      }
+    },
+    "budgetLimitCny": {
+      "type": "number",
+      "minimum": 0
+    },
+    "designSystemId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "running",
+        "waiting_human",
+        "done",
+        "failed"
+      ]
+    }
+  },
+  "required": [
+    "projectId",
+    "nameZh",
+    "nameEn",
+    "synopsis",
+    "audience",
+    "genres",
+    "ownerOpenId",
+    "locales",
+    "aspectRatios",
+    "budgetLimitCny",
+    "status"
+  ],
+  "additionalProperties": false
+}

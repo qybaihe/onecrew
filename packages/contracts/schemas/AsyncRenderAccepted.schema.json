@@ -1,0 +1,49 @@
+{
+  "$id": "https://onecrew.local/schemas/AsyncRenderAccepted.schema.json",
+  "title": "AsyncRenderAccepted",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "renderId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "succeeded"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "preview",
+        "final"
+      ]
+    },
+    "statusUrl": {
+      "type": "string",
+      "pattern": "^\\/v1\\/renders\\/.*"
+    },
+    "replayed": {
+      "default": false,
+      "type": "boolean"
+    },
+    "cached": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "renderId",
+    "status",
+    "mode",
+    "statusUrl",
+    "replayed",
+    "cached"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" role="img" aria-labelledby="title">
+  <title id="title">Shanhai Stars portrait poster frame</title>
+  <rect width="1080" height="1920" fill="none" stroke="#2EC4B6" stroke-width="28"/>
+  <rect x="70" y="1380" width="940" height="380" rx="36" fill="#07111F" fill-opacity="0.9"/>
+  <path d="M126 1450h828" stroke="#FFB703" stroke-width="10"/>
+  <text x="126" y="1585" fill="#F7F3E8" font-size="96" font-family="serif">山海星辰</text>
+  <text x="126" y="1680" fill="#A6B5C5" font-size="34" font-family="system-ui, sans-serif">SHANHAI STARS</text>
+</svg>

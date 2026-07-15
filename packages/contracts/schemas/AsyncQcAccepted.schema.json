@@ -1,0 +1,41 @@
+{
+  "$id": "https://onecrew.local/schemas/AsyncQcAccepted.schema.json",
+  "title": "AsyncQcAccepted",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "qcRunId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "waiting_provider",
+        "waiting_human",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "statusUrl": {
+      "type": "string",
+      "pattern": "^\\/v1\\/qc\\/runs\\/.*"
+    },
+    "replayed": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "qcRunId",
+    "status",
+    "statusUrl",
+    "replayed"
+  ],
+  "additionalProperties": false
+}
