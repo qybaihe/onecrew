@@ -977,6 +977,64 @@ export const asyncJobAcceptedSchema = z.object({
   replayed: z.boolean().default(false),
 });
 
+export const creativeGenerationKindSchema = z.enum(['image', 'video']);
+export const creativeGenerationBatchItemStatusSchema = z.enum([
+  'pending',
+  'skipped',
+  'submission_failed',
+  ...jobStatusSchema.options,
+]);
+export const creativeGenerationBatchStatusSchema = z.enum([
+  'submitting',
+  'running',
+  'waiting_human',
+  'succeeded',
+  'partial',
+  'failed',
+  'cancelled',
+]);
+export const creativeGenerationBatchRequestSchema = z
+  .object({
+    kind: creativeGenerationKindSchema,
+    shotIds: z.array(idSchema).min(1).max(100).optional(),
+    expectedVersions: z.record(idSchema, z.number().int().positive()),
+    missingOnly: z.boolean().default(true),
+    route: providerRouteSchema.default('primary'),
+    generationNonce: z.number().int().nonnegative(),
+    concurrency: z.number().int().min(1).max(10).default(3),
+  })
+  .superRefine((value, context) => {
+    if (value.shotIds && new Set(value.shotIds).size !== value.shotIds.length) {
+      context.addIssue({ code: 'custom', path: ['shotIds'], message: 'must not contain duplicates' });
+    }
+  });
+export const creativeGenerationBatchItemSchema = z.object({
+  shotId: idSchema,
+  expectedVersion: z.number().int().positive(),
+  status: creativeGenerationBatchItemStatusSchema,
+  jobId: idSchema.optional(),
+  mode: providerModeSchema.optional(),
+  provider: z.string().min(1).max(200).optional(),
+  estimatedCostCny: nonNegativeMoneySchema.optional(),
+  outputAssetIds: z.array(idSchema).default([]),
+  retryCount: z.number().int().nonnegative().default(0),
+  reason: z.string().min(1).max(4_000).optional(),
+});
+export const creativeGenerationBatchSchema = z.object({
+  batchId: idSchema,
+  projectId: idSchema,
+  kind: creativeGenerationKindSchema,
+  status: creativeGenerationBatchStatusSchema,
+  missingOnly: z.boolean(),
+  route: providerRouteSchema,
+  generationNonce: z.number().int().nonnegative(),
+  concurrency: z.number().int().min(1).max(10),
+  items: z.array(creativeGenerationBatchItemSchema).max(100),
+  inputHash: sha256Schema,
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+});
+
 export const providerCallbackSchema = z.object({
   eventId: idSchema,
   provider: z.string().min(1).max(200),
@@ -1023,6 +1081,8 @@ export const contractSchemas = {
   ProviderJobState: providerJobStateSchema,
   ProviderCallback: providerCallbackSchema,
   AsyncJobAccepted: asyncJobAcceptedSchema,
+  CreativeGenerationBatchRequest: creativeGenerationBatchRequestSchema,
+  CreativeGenerationBatch: creativeGenerationBatchSchema,
 } as const;
 
 export type Locale = z.infer<typeof localeSchema>;
@@ -1072,6 +1132,12 @@ export type PublishRequest = z.infer<typeof publishRequestSchema>;
 export type PublishRecord = z.infer<typeof publishRecordSchema>;
 export type JobRecord = z.infer<typeof jobRecordSchema>;
 export type AssetRecord = z.infer<typeof assetRecordSchema>;
+export type CreativeGenerationKind = z.infer<typeof creativeGenerationKindSchema>;
+export type CreativeGenerationBatchItemStatus = z.infer<typeof creativeGenerationBatchItemStatusSchema>;
+export type CreativeGenerationBatchStatus = z.infer<typeof creativeGenerationBatchStatusSchema>;
+export type CreativeGenerationBatchRequest = z.infer<typeof creativeGenerationBatchRequestSchema>;
+export type CreativeGenerationBatchItem = z.infer<typeof creativeGenerationBatchItemSchema>;
+export type CreativeGenerationBatch = z.infer<typeof creativeGenerationBatchSchema>;
 export type QCRecord = z.infer<typeof qcRecordSchema>;
 export type TechnicalQcExpectation = z.infer<typeof technicalQcExpectationSchema>;
 export type TechnicalQcReport = z.infer<typeof technicalQcReportSchema>;

@@ -1,10 +1,12 @@
 import type {
   AssetRecord,
   CreativeEntity,
+  CreativeGenerationBatch,
   CreativeProjectBundle,
   EpisodeSpec,
   JobRecord,
   ProjectSpec,
+  ProviderMode,
   ShotSpec,
 } from '@onecrew/contracts';
 
@@ -46,13 +48,23 @@ interface CreativeEditResponse<Record> {
 export interface CreativeGenerationAccepted {
   job_id: string;
   status: 'queued' | 'waiting_human';
-  mode: 'mock' | 'real';
+  mode: ProviderMode;
   provider: string;
   route: 'primary' | 'fallback';
   estimated_cost_cny: number;
   status_url: string;
   replayed: boolean;
   warning?: string;
+}
+
+export interface CreativeGenerationBatchResponse {
+  batch: CreativeGenerationBatch;
+  version: number;
+}
+
+export interface LatestCreativeGenerationBatchResponse {
+  batch: CreativeGenerationBatch | null;
+  version: number;
 }
 
 export interface CreativeJobResponse {
@@ -221,6 +233,65 @@ export async function submitCreativeShotGeneration(
 export async function getCreativeJob(jobId: string): Promise<CreativeJobResponse> {
   const response = await request(`/v1/jobs/${encodeURIComponent(jobId)}`);
   return json<CreativeJobResponse>(response);
+}
+
+export async function submitCreativeGenerationBatch(
+  projectId: string,
+  kind: 'image' | 'video',
+  expectedVersions: Record<string, number>,
+): Promise<CreativeGenerationBatchResponse> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/generation-batches`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `studio_batch_${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        kind,
+        expectedVersions,
+        missingOnly: true,
+        route: 'primary',
+        generationNonce: Date.now(),
+        concurrency: 3,
+      }),
+    },
+  );
+  return json<CreativeGenerationBatchResponse>(response);
+}
+
+export async function getCreativeGenerationBatch(batchId: string): Promise<CreativeGenerationBatchResponse> {
+  const response = await request(`/v1/creative/generation-batches/${encodeURIComponent(batchId)}`);
+  return json<CreativeGenerationBatchResponse>(response);
+}
+
+export async function getLatestCreativeGenerationBatch(
+  projectId: string,
+): Promise<LatestCreativeGenerationBatchResponse> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/generation-batches/latest`,
+  );
+  return json<LatestCreativeGenerationBatchResponse>(response);
+}
+
+export async function cancelCreativeGenerationBatch(batchId: string): Promise<CreativeGenerationBatchResponse> {
+  const response = await request(`/v1/creative/generation-batches/${encodeURIComponent(batchId)}/cancel`, {
+    method: 'POST',
+  });
+  return json<CreativeGenerationBatchResponse>(response);
+}
+
+export async function retryCreativeGenerationBatch(batchId: string): Promise<CreativeGenerationBatchResponse> {
+  const response = await request(`/v1/creative/generation-batches/${encodeURIComponent(batchId)}/retry`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': `studio_batch_retry_${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({ route: 'primary' }),
+  });
+  return json<CreativeGenerationBatchResponse>(response);
 }
 
 export async function downloadCreativeProject(projectId: string): Promise<void> {

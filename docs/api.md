@@ -25,6 +25,11 @@ PATCH /v1/creative/episodes/:episodeId
 PATCH /v1/creative/entities/:entityId
 PATCH /v1/creative/shots/:shotId
 POST  /v1/creative/shots/:shotId/generations
+POST  /v1/creative/projects/:projectId/generation-batches
+GET   /v1/creative/projects/:projectId/generation-batches/latest
+GET   /v1/creative/generation-batches/:batchId
+POST  /v1/creative/generation-batches/:batchId/cancel
+POST  /v1/creative/generation-batches/:batchId/retry
 GET  /v1/creative/projects/:projectId/exports/onecrew.zip
 GET  /v1/creative/projects/:projectId/exports/compatible.zip
 ```
@@ -150,6 +155,53 @@ curl --request POST \
 `kind` 支持 `image` 和 `video`。图片请求会按顺序收集上一镜尾帧、本镜首帧、分镜参考和角色/场景/道具参考，并附加连续性约束；视频请求优先使用本镜最新图片版本作为参考首帧。成功输出由 Worker 写入 `AssetRecord`，重新生成会增加版本并使用 `parentAssetId` 保留血缘。
 
 提交成功返回 HTTP 202 和 `status_url`。`expectedVersion` 过期返回 409，缺少幂等键返回 400，Provider 未配置返回 503。Mock 响应会明确标记 `mode: "mock"`；请通过 `GET /v1/jobs/:jobId` 跟踪最终状态。
+
+### 批量补齐、停止与重试
+
+批次不是浏览器中的临时循环。批次本身持久化到 PostgreSQL，每个分镜仍是独立的 Provider Job，因此保留幂等、预算闸门、取消、成本和资产版本链：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/projects/prj_demo/generation-batches \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: prj-demo-missing-images-1' \
+  --data '{
+    "kind": "image",
+    "expectedVersions": {
+      "shot_demo_001": 1,
+      "shot_demo_002": 1
+    },
+    "missingOnly": true,
+    "route": "primary",
+    "generationNonce": 1,
+    "concurrency": 3
+  }'
+```
+
+`shotIds` 可选；省略时处理项目全部分镜。`missingOnly: true` 会把已有对应图片/视频资产的分镜标记为 `skipped`。所有待处理分镜都必须在 `expectedVersions` 中携带当前版本；任一版本过期，整个批次拒绝提交。`concurrency` 可设为 1～10，用于限制同时提交的数量。
+
+查询与恢复最新批次：
+
+```text
+GET /v1/creative/generation-batches/:batchId
+GET /v1/creative/projects/:projectId/generation-batches/latest
+```
+
+停止会取消仍处于 `queued` / `running` / `waiting_human` 的子 Job，不回滚已成功的资产：
+
+```bash
+curl --request POST http://127.0.0.1:3000/v1/creative/generation-batches/batch_xxx/cancel
+```
+
+重试只处理 `submission_failed` / `failed` / `cancelled` 项，并创建新 Job；成功项和已跳过项不会重复计费：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/generation-batches/batch_xxx/retry \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: batch-xxx-retry-1' \
+  --data '{"route":"primary"}'
+```
 
 ### 导出工程
 

@@ -1,5 +1,6 @@
 import type {
   AssetRecord,
+  CreativeGenerationBatch,
   CreativeEntity,
   EpisodeSpec,
   FramePromptSpec,
@@ -252,6 +253,30 @@ export const jobs = pgTable(
     uniqueIndex('jobs_project_idempotency_uidx').on(table.projectId, table.idempotencyKey),
     index('jobs_project_status_idx').on(table.projectId, table.status),
     index('jobs_shot_idx').on(table.shotId),
+  ],
+);
+
+export const creativeGenerationBatches = pgTable(
+  'creative_generation_batches',
+  {
+    batchId: text('batch_id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    inputHash: char('input_hash', { length: 64 }).notNull(),
+    record: jsonb('record').$type<CreativeGenerationBatch>().notNull(),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('creative_generation_batches_project_idempotency_uidx').on(
+      table.projectId,
+      table.idempotencyKey,
+    ),
+    index('creative_generation_batches_project_status_idx').on(table.projectId, table.status),
   ],
 );
 

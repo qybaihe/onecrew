@@ -1,6 +1,7 @@
 import {
   type CreativeProjectBundle,
   type ProviderRequest,
+  creativeGenerationBatchSchema,
   episodeSpecSchema,
   sceneSpecSchema,
   shotSpecSchema,
@@ -172,6 +173,30 @@ describe('creative routes', () => {
     });
     let currentShot = shot;
     let generationRequest: ProviderRequest | undefined;
+    const batchRecord = creativeGenerationBatchSchema.parse({
+      batchId: 'batch_api_generation',
+      projectId,
+      kind: 'image',
+      status: 'running',
+      missingOnly: true,
+      route: 'primary',
+      generationNonce: 12,
+      concurrency: 2,
+      items: [{
+        shotId,
+        expectedVersion: 2,
+        status: 'queued',
+        jobId: 'job_api_batch',
+        mode: 'mock',
+        provider: 'mock-image-primary',
+        estimatedCostCny: 0.01,
+        outputAssetIds: [],
+        retryCount: 0,
+      }],
+      inputHash: '9'.repeat(64),
+      createdAt: now,
+      updatedAt: now,
+    });
     const bundle: CreativeProjectBundle = {
       bundleVersion: '1.0',
       source: { system: 'onecrew', importedAt: now },
@@ -255,6 +280,28 @@ describe('creative routes', () => {
             };
           },
         },
+        batchGenerator: {
+          async submit(id) {
+            if (id !== projectId) throw new Error('wrong project');
+            return { value: batchRecord, version: 1 };
+          },
+          async get(id) {
+            if (id !== batchRecord.batchId) throw new Error('wrong batch');
+            return { value: batchRecord, version: 1 };
+          },
+          async latest(id) {
+            if (id !== projectId) throw new Error('wrong project');
+            return { value: batchRecord, version: 1 };
+          },
+          async cancel(id) {
+            if (id !== batchRecord.batchId) throw new Error('wrong batch');
+            return { value: { ...batchRecord, status: 'cancelled' as const }, version: 2 };
+          },
+          async retry(id) {
+            if (id !== batchRecord.batchId) throw new Error('wrong batch');
+            return { value: { ...batchRecord, route: 'fallback' as const }, version: 3 };
+          },
+        },
       },
     });
 
@@ -321,6 +368,43 @@ describe('creative routes', () => {
       payload: { expectedVersion: 1, kind: 'video', generationNonce: 11 },
     });
     expect(staleGeneration.statusCode).toBe(409);
+
+    const batch = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/generation-batches`,
+      headers: { 'idempotency-key': 'creative_batch_1' },
+      payload: {
+        kind: 'image',
+        expectedVersions: { [shotId]: 2 },
+        missingOnly: true,
+        route: 'primary',
+        generationNonce: 12,
+        concurrency: 2,
+      },
+    });
+    expect(batch.statusCode).toBe(202);
+    expect(batch.json()).toMatchObject({ batch: { batchId: 'batch_api_generation', status: 'running' } });
+
+    const latestBatch = await app.inject({
+      method: 'GET',
+      url: `/v1/creative/projects/${projectId}/generation-batches/latest`,
+    });
+    expect(latestBatch.json()).toMatchObject({ batch: { batchId: 'batch_api_generation' }, version: 1 });
+
+    const stoppedBatch = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/generation-batches/${batchRecord.batchId}/cancel`,
+    });
+    expect(stoppedBatch.json()).toMatchObject({ batch: { status: 'cancelled' }, version: 2 });
+
+    const retriedBatch = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/generation-batches/${batchRecord.batchId}/retry`,
+      headers: { 'idempotency-key': 'creative_batch_retry_1' },
+      payload: { route: 'fallback' },
+    });
+    expect(retriedBatch.statusCode).toBe(202);
+    expect(retriedBatch.json()).toMatchObject({ batch: { route: 'fallback' }, version: 3 });
 
     const conflict = await app.inject({
       method: 'PATCH',

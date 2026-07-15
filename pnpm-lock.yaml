@@ -343,6 +343,9 @@ importers:
       '@onecrew/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@onecrew/creative':
+        specifier: workspace:*
+        version: link:../creative
       '@onecrew/db':
         specifier: workspace:*
         version: link:../db

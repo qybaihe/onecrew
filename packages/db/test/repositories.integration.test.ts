@@ -1,5 +1,5 @@
 import { loadEnv } from '@onecrew/config';
-import { creativeProjectBundleSchema, projectSpecSchema } from '@onecrew/contracts';
+import { creativeGenerationBatchSchema, creativeProjectBundleSchema, projectSpecSchema } from '@onecrew/contracts';
 import { createInputHash, InvalidStateTransitionError, VersionConflictError } from '@onecrew/domain';
 import { eq } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -343,6 +343,51 @@ describe('PostgreSQL repositories', () => {
       value: { status: 'queued' },
       version: 4,
     });
+
+    const batchId = `batch_entities_${suffix}`;
+    const generationBatch = creativeGenerationBatchSchema.parse({
+      batchId,
+      projectId,
+      kind: 'video',
+      status: 'running',
+      missingOnly: true,
+      route: 'primary',
+      generationNonce: 1,
+      concurrency: 3,
+      items: [{
+        shotId,
+        expectedVersion: 2,
+        status: 'queued',
+        jobId,
+        mode: 'mock',
+        provider: 'mock-video-primary',
+        estimatedCostCny: 0,
+        outputAssetIds: [],
+        retryCount: 0,
+      }],
+      inputHash: createInputHash({ projectId, kind: 'video', shotId }),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const createdBatch = await repositories.creativeGenerationBatches.create(
+      generationBatch,
+      `batch:${projectId}:video`,
+    );
+    await expect(
+      repositories.creativeGenerationBatches.getByIdempotency(projectId, `batch:${projectId}:video`),
+    ).resolves.toMatchObject({ value: { batchId, status: 'running' }, version: 1 });
+    await expect(repositories.creativeGenerationBatches.latestForProject(projectId)).resolves.toMatchObject({
+      value: { batchId },
+      version: 1,
+    });
+    await expect(
+      repositories.creativeGenerationBatches.replace(batchId, createdBatch.version, {
+        ...generationBatch,
+        status: 'cancelled',
+        items: generationBatch.items.map((item) => ({ ...item, status: 'cancelled' as const })),
+        updatedAt: new Date().toISOString(),
+      }),
+    ).resolves.toMatchObject({ value: { status: 'cancelled' }, version: 2 });
 
     await expect(
       repositories.qc.create({

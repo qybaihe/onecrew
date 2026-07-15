@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import type { CreativeEntity, EpisodeSpec, JobStatus, ProjectSpec, ShotSpec } from '@onecrew/contracts';
+import type {
+  CreativeEntity,
+  CreativeGenerationBatch,
+  EpisodeSpec,
+  JobStatus,
+  ProjectSpec,
+  ProviderMode,
+  ShotSpec,
+} from '@onecrew/contracts';
 import {
   Background,
   Controls,
@@ -12,11 +20,16 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import {
+  cancelCreativeGenerationBatch,
   downloadCreativeProject,
+  getCreativeGenerationBatch,
   getCreativeJob,
+  getLatestCreativeGenerationBatch,
   getCreativeProject,
   importCreativeArchive,
   listCreativeProjects,
+  retryCreativeGenerationBatch,
+  submitCreativeGenerationBatch,
   submitCreativeShotGeneration,
   updateCreativeEntity,
   updateCreativeEpisode,
@@ -33,7 +46,7 @@ type GenerationStatus = 'idle' | 'submitting' | JobStatus;
 interface GenerationState {
   status: GenerationStatus;
   jobId?: string;
-  mode?: 'mock' | 'real';
+  mode?: ProviderMode;
   provider?: string;
   outputAssetIds?: string[];
 }
@@ -156,6 +169,16 @@ const generationStatusLabels: Record<GenerationStatus, string> = {
   cancelled: '已取消',
 };
 
+const batchStatusLabels: Record<CreativeGenerationBatch['status'], string> = {
+  submitting: '正在提交',
+  running: '批量生成中',
+  waiting_human: '等待飞书预算审批',
+  succeeded: '批量生成完成',
+  partial: '部分成功',
+  failed: '批量生成失败',
+  cancelled: '已停止',
+};
+
 function flowGraph(shots: ShotSpec[], selectedShotId: string | undefined): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = shots.map((shot, index) => ({
     id: shot.shotId,
@@ -201,9 +224,12 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [shotForm, setShotForm] = useState<ShotDraft>(() => shotDraft(undefined));
   const [entityForm, setEntityForm] = useState<EntityDraft>(() => entityDraft(undefined));
   const [shotGenerations, setShotGenerations] = useState<Partial<Record<GenerationKind, GenerationState>>>({});
+  const [generationBatch, setGenerationBatch] = useState<CreativeGenerationBatch>();
+  const [batchAction, setBatchAction] = useState<'idle' | 'submitting' | 'polling' | 'stopping' | 'retrying'>('idle');
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
   const generationSelectionRef = useRef('');
+  const projectSelectionRef = useRef('');
 
   const refreshProjects = async (preferredId?: string) => {
     const result = await listCreativeProjects();
@@ -219,6 +245,9 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   }, []);
 
   useEffect(() => {
+    projectSelectionRef.current = selectedProjectId ?? '';
+    setGenerationBatch(undefined);
+    setBatchAction('idle');
     if (!selectedProjectId) {
       setProject(undefined);
       setLoading(false);
@@ -235,6 +264,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
       .finally(() => setLoading(false));
+    void getLatestCreativeGenerationBatch(selectedProjectId)
+      .then((result) => {
+        if (projectSelectionRef.current === selectedProjectId) setGenerationBatch(result.batch ?? undefined);
+      })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
   }, [selectedProjectId]);
 
   const bundle = project?.bundle;
@@ -455,6 +489,99 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     }
   };
 
+  const followGenerationBatch = async (batchId: string, projectId: string) => {
+    const stillSelected = () => projectSelectionRef.current === projectId;
+    setBatchAction('polling');
+    const deadline = Date.now() + 120_000;
+    try {
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 750));
+        if (!stillSelected()) return;
+        const current = await getCreativeGenerationBatch(batchId);
+        if (!stillSelected()) return;
+        setGenerationBatch(current.batch);
+        if (['succeeded', 'partial', 'failed', 'cancelled', 'waiting_human'].includes(current.batch.status)) {
+          setBatchAction('idle');
+          const refreshed = await getCreativeProject(projectId);
+          if (stillSelected()) setProject(refreshed);
+          return;
+        }
+      }
+      throw new Error('批量生成仍在运行，可使用“刷新状态”继续查看。');
+    } catch (reason) {
+      if (!stillSelected()) return;
+      setBatchAction('idle');
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleBatchGeneration = async (kind: GenerationKind) => {
+    if (!project || !selectedProjectId) return;
+    if (shotDirty) return setError('请先保存当前分镜修改，再开始批量生成。');
+    const projectId = selectedProjectId;
+    setError(undefined);
+    setBatchAction('submitting');
+    try {
+      const result = await submitCreativeGenerationBatch(projectId, kind, project.versions.shots);
+      if (projectSelectionRef.current !== projectId) return;
+      setGenerationBatch(result.batch);
+      if (['succeeded', 'partial', 'failed', 'cancelled', 'waiting_human'].includes(result.batch.status)) {
+        setBatchAction('idle');
+        setProject(await getCreativeProject(projectId));
+        return;
+      }
+      await followGenerationBatch(result.batch.batchId, projectId);
+    } catch (reason) {
+      if (projectSelectionRef.current !== projectId) return;
+      setBatchAction('idle');
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleBatchCancel = async () => {
+    if (!generationBatch) return;
+    setError(undefined);
+    setBatchAction('stopping');
+    try {
+      const result = await cancelCreativeGenerationBatch(generationBatch.batchId);
+      setGenerationBatch(result.batch);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBatchAction('idle');
+    }
+  };
+
+  const handleBatchRetry = async () => {
+    if (!generationBatch || !selectedProjectId) return;
+    const projectId = selectedProjectId;
+    setError(undefined);
+    setBatchAction('retrying');
+    try {
+      const result = await retryCreativeGenerationBatch(generationBatch.batchId);
+      if (projectSelectionRef.current !== projectId) return;
+      setGenerationBatch(result.batch);
+      await followGenerationBatch(result.batch.batchId, projectId);
+    } catch (reason) {
+      if (projectSelectionRef.current === projectId) {
+        setBatchAction('idle');
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    }
+  };
+
+  const handleBatchRefresh = async () => {
+    if (!generationBatch) return;
+    setError(undefined);
+    try {
+      const result = await getCreativeGenerationBatch(generationBatch.batchId);
+      setGenerationBatch(result.batch);
+      if (selectedProjectId) setProject(await getCreativeProject(selectedProjectId));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
   const handleEntitySave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!project || !selectedEntity) return;
@@ -497,6 +624,19 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
       }
     }
   };
+
+  const batchActive = Boolean(
+    generationBatch && ['submitting', 'running', 'waiting_human'].includes(generationBatch.status),
+  );
+  const batchRetryable = generationBatch?.items.filter((item) =>
+    ['submission_failed', 'failed', 'cancelled'].includes(item.status),
+  ).length ?? 0;
+  const batchCompleted = generationBatch?.items.filter((item) => item.status === 'succeeded').length ?? 0;
+  const batchSkipped = generationBatch?.items.filter((item) => item.status === 'skipped').length ?? 0;
+  const batchModes = [...new Set(generationBatch?.items.flatMap((item) => item.mode ? [item.mode] : []) ?? [])]
+    .map((mode) => mode.toUpperCase())
+    .join('/');
+  const batchMutating = ['submitting', 'stopping', 'retrying'].includes(batchAction);
 
   return (
     <div className="studio-shell">
@@ -646,6 +786,57 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
               <button type="button" role="tab" aria-selected={view === 'canvas'} className={view === 'canvas' ? 'active' : ''} onClick={() => setView('canvas')}>流程画布</button>
             </div>
           </div>
+
+          <section className="batch-generation" aria-label="批量生成">
+            <div className="batch-generation-copy">
+              <span>BATCH GENERATION</span>
+              <strong>批量补齐缺失镜头</strong>
+              <p>按当前数据库版本并发提交；已有结果自动跳过，每个 Job 独立幂等、计费并写入资产版本链。</p>
+            </div>
+            <div className="batch-generation-actions">
+              <button
+                type="button"
+                disabled={!project || shotDirty || batchActive || batchAction !== 'idle'}
+                onClick={() => void handleBatchGeneration('image')}
+              >
+                {batchAction === 'submitting' ? '提交中…' : '批量补齐分镜图'}
+              </button>
+              <button
+                type="button"
+                disabled={!project || shotDirty || batchActive || batchAction !== 'idle'}
+                onClick={() => void handleBatchGeneration('video')}
+              >
+                {batchAction === 'submitting' ? '提交中…' : '批量补齐视频'}
+              </button>
+            </div>
+            {generationBatch && (
+              <div className="batch-generation-state">
+                <div>
+                  <span data-status={generationBatch.status}>{batchStatusLabels[generationBatch.status]}</span>
+                  <small>
+                    {generationBatch.kind === 'image' ? '图片' : '视频'}{batchModes ? ` · ${batchModes}` : ''} · 成功 {batchCompleted} · 跳过 {batchSkipped} · 待重试 {batchRetryable}
+                  </small>
+                </div>
+                <div className="batch-generation-controls">
+                  <button type="button" disabled={batchMutating} onClick={() => void handleBatchRefresh()}>刷新状态</button>
+                  <button
+                    type="button"
+                    disabled={!batchActive || batchMutating}
+                    onClick={() => void handleBatchCancel()}
+                  >
+                    {batchAction === 'stopping' ? '停止中…' : '停止未完成项'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={batchActive || batchRetryable === 0 || batchMutating}
+                    onClick={() => void handleBatchRetry()}
+                  >
+                    {batchAction === 'retrying' ? '重试中…' : '重试失败项'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
 
           {loading ? (
             <div className="studio-empty"><span className="studio-spinner" />正在读取创作工程…</div>

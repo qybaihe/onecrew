@@ -2,6 +2,7 @@ import {
   assetRecordSchema,
   characterSpecSchema,
   creativeEntitySchema,
+  creativeGenerationBatchSchema,
   creativeProjectBundleSchema,
   episodeSpecSchema,
   feishuCardActionSchema,
@@ -24,6 +25,7 @@ import {
   type AssetRecord,
   type AssetStatus,
   type CreativeEntity,
+  type CreativeGenerationBatch,
   type CreativeProjectBundle,
   type EpisodeSpec,
   type FeishuCardAction,
@@ -62,6 +64,7 @@ import type { OneCrewDatabase } from './client.js';
 import {
   assets,
   auditLogs,
+  creativeGenerationBatches,
   creativeEntities,
   episodes,
   experiments,
@@ -114,7 +117,7 @@ export interface Versioned<T> {
 
 async function currentVersionOrThrow(
   db: OneCrewDatabase,
-  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'render' | 'qc_run' | 'localization_run',
   id: string,
 ): Promise<number> {
   if (entity === 'project') {
@@ -144,6 +147,13 @@ async function currentVersionOrThrow(
     const [row] = await db.select({ version: jobs.version }).from(jobs).where(eq(jobs.jobId, id));
     if (row) return row.version;
   }
+  if (entity === 'creative_generation_batch') {
+    const [row] = await db
+      .select({ version: creativeGenerationBatches.version })
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.batchId, id));
+    if (row) return row.version;
+  }
   if (entity === 'render') {
     const [row] = await db.select({ version: renders.version }).from(renders).where(eq(renders.renderId, id));
     if (row) return row.version;
@@ -164,7 +174,7 @@ async function currentVersionOrThrow(
 
 async function throwVersionConflict(
   db: OneCrewDatabase,
-  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'render' | 'qc_run' | 'localization_run',
   id: string,
   expectedVersion: number,
 ): Promise<never> {
@@ -803,6 +813,95 @@ export class JobRepository {
       .returning();
     if (!row) return throwVersionConflict(this.db, 'job', jobId, expectedVersion);
     return { value: jobRecordSchema.parse(row.record), version: row.version };
+  }
+}
+
+export class CreativeGenerationBatchRepository {
+  constructor(private readonly db: OneCrewDatabase) {}
+
+  async create(
+    input: CreativeGenerationBatch,
+    idempotencyKey: string,
+  ): Promise<Versioned<CreativeGenerationBatch>> {
+    const record = creativeGenerationBatchSchema.parse(input);
+    const [row] = await this.db
+      .insert(creativeGenerationBatches)
+      .values({
+        batchId: record.batchId,
+        projectId: record.projectId,
+        kind: record.kind,
+        status: record.status,
+        idempotencyKey,
+        inputHash: record.inputHash,
+        record,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created creative generation batch');
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async get(batchId: string): Promise<Versioned<CreativeGenerationBatch>> {
+    const [row] = await this.db
+      .select()
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.batchId, batchId));
+    if (!row) throw new RecordNotFoundError('creative_generation_batch', batchId);
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async getByIdempotency(
+    projectId: string,
+    idempotencyKey: string,
+  ): Promise<Versioned<CreativeGenerationBatch> | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(creativeGenerationBatches)
+      .where(
+        and(
+          eq(creativeGenerationBatches.projectId, projectId),
+          eq(creativeGenerationBatches.idempotencyKey, idempotencyKey),
+        ),
+      );
+    if (!row) return undefined;
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async latestForProject(projectId: string): Promise<Versioned<CreativeGenerationBatch> | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.projectId, projectId))
+      .orderBy(desc(creativeGenerationBatches.createdAt))
+      .limit(1);
+    if (!row) return undefined;
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async replace(
+    batchId: string,
+    expectedVersion: number,
+    input: CreativeGenerationBatch,
+  ): Promise<Versioned<CreativeGenerationBatch>> {
+    const record = creativeGenerationBatchSchema.parse(input);
+    const [row] = await this.db
+      .update(creativeGenerationBatches)
+      .set({
+        kind: record.kind,
+        status: record.status,
+        inputHash: record.inputHash,
+        record,
+        version: expectedVersion + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(creativeGenerationBatches.batchId, batchId),
+          eq(creativeGenerationBatches.version, expectedVersion),
+        ),
+      )
+      .returning();
+    if (!row) return throwVersionConflict(this.db, 'creative_generation_batch', batchId, expectedVersion);
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
   }
 }
 
@@ -1806,6 +1905,7 @@ export function createRepositories(db: OneCrewDatabase) {
     shots: new ShotRepository(db),
     assets: new AssetRepository(db),
     jobs: new JobRepository(db),
+    creativeGenerationBatches: new CreativeGenerationBatchRepository(db),
     qc: new QcRepository(db),
     qcRuns: new QcRunRepository(db),
     localizationRuns: new LocalizationRunRepository(db),

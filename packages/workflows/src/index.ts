@@ -1,4 +1,5 @@
 export * from './provider-callback.js';
+export * from './creative-generation-batch-orchestrator.js';
 export * from './provider-assets.js';
 export * from './provider-orchestrator.js';
 export * from './provider-queue.js';

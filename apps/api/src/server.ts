@@ -14,6 +14,7 @@ import {
   BullProviderQueue,
   BullQcQueue,
   BullRenderQueue,
+  CreativeGenerationBatchOrchestrator,
   LocalizationOrchestrator,
   ProductionWorkflow,
   PublishOrchestrator,
@@ -62,6 +63,10 @@ const providerOrchestrator = new ProviderOrchestrator(
   providerGateway,
   providerQueue,
   { softBudgetRatio: env.PROVIDER_SOFT_BUDGET_RATIO },
+);
+const creativeGenerationBatchOrchestrator = new CreativeGenerationBatchOrchestrator(
+  repositories,
+  providerOrchestrator,
 );
 const providerCallbackProcessor = new ProviderCallbackProcessor(repositories);
 const localizationQueue = new BullLocalizationQueue(env.REDIS_URL);
@@ -242,6 +247,7 @@ const app = createApp({
     mediaStore,
     shotRepository: repositories.shots,
     generator: providerOrchestrator,
+    batchGenerator: creativeGenerationBatchOrchestrator,
   },
   feishu: {
     security: {
