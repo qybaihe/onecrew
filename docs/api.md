@@ -24,6 +24,7 @@ POST /v1/creative/imports/onecrew/zip
 PATCH /v1/creative/episodes/:episodeId
 PATCH /v1/creative/entities/:entityId
 PATCH /v1/creative/shots/:shotId
+POST  /v1/creative/shots/:shotId/generations
 GET  /v1/creative/projects/:projectId/exports/onecrew.zip
 GET  /v1/creative/projects/:projectId/exports/compatible.zip
 ```
@@ -128,6 +129,27 @@ curl --request PATCH \
 ```
 
 成功响应返回新记录和增加后的 `version`，并在同一数据库事务写入审计日志。过期版本返回 HTTP 409 和当前实际版本信息。
+
+### 从已保存分镜生成图片或视频
+
+该端点使用数据库中的当前分镜，不接受客户端私自传入的提示词。请先保存分镜，再提交生成：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/shots/shot_demo_001/generations \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: studio-shot-demo-001-image-1' \
+  --data '{
+    "expectedVersion": 1,
+    "kind": "image",
+    "route": "primary",
+    "generationNonce": 1
+  }'
+```
+
+`kind` 支持 `image` 和 `video`。图片请求会按顺序收集上一镜尾帧、本镜首帧、分镜参考和角色/场景/道具参考，并附加连续性约束；视频请求优先使用本镜最新图片版本作为参考首帧。成功输出由 Worker 写入 `AssetRecord`，重新生成会增加版本并使用 `parentAssetId` 保留血缘。
+
+提交成功返回 HTTP 202 和 `status_url`。`expectedVersion` 过期返回 409，缺少幂等键返回 400，Provider 未配置返回 503。Mock 响应会明确标记 `mode: "mock"`；请通过 `GET /v1/jobs/:jobId` 跟踪最终状态。
 
 ### 导出工程
 

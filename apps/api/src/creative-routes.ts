@@ -1,4 +1,5 @@
 import {
+  buildCreativeShotGenerationRequest,
   convertLocalMiniDramaProject,
   exportLocalMiniDramaArchive,
   exportOneCrewArchive,
@@ -14,9 +15,15 @@ import {
   sceneSpecSchema,
   shotSpecSchema,
 } from '@onecrew/contracts';
-import { InvalidCreativeAssetBindingError, RecordNotFoundError, type CreativeRepository } from '@onecrew/db';
+import {
+  InvalidCreativeAssetBindingError,
+  RecordNotFoundError,
+  type CreativeRepository,
+  type ShotRepository,
+} from '@onecrew/db';
 import { VersionConflictError } from '@onecrew/domain';
 import type { S3MediaStore } from '@onecrew/media';
+import type { ProviderOrchestrator } from '@onecrew/workflows';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
 
@@ -33,6 +40,8 @@ export interface CreativeRouteOptions {
     | 'updateShot'
   >;
   mediaStore?: Pick<S3MediaStore, 'put' | 'get'>;
+  shotRepository?: Pick<ShotRepository, 'get'>;
+  generator?: Pick<ProviderOrchestrator, 'submit'>;
 }
 
 const importOptionsSchema = z.object({
@@ -82,6 +91,16 @@ const entityPatchSchema = z.union([
     .refine((patch) => Object.keys(patch).length > 0, { message: 'Entity patch must change at least one field' }),
 ]);
 const entityEditSchema = editContextSchema.extend({ patch: entityPatchSchema });
+const shotGenerationSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  kind: z.enum(['image', 'video']),
+  route: z.enum(['primary', 'fallback']).default('primary'),
+  generationNonce: z.number().int().nonnegative(),
+});
+
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeRouteOptions): void {
   app.get('/v1/creative/projects', async (_request, reply) => {
@@ -229,6 +248,52 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
     }
   });
 
+  app.post('/v1/creative/shots/:shotId/generations', async (request, reply) => {
+    if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
+    if (!options.shotRepository || !options.generator) {
+      return creativeError(reply, new CreativeGenerationNotConfiguredError());
+    }
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingCreativeGenerationIdempotencyKeyError();
+      const { shotId } = request.params as { shotId: string };
+      const input = shotGenerationSchema.parse(request.body);
+      const shot = await options.shotRepository.get(shotId);
+      if (shot.version !== input.expectedVersion) {
+        throw new VersionConflictError(input.expectedVersion, shot.version);
+      }
+      const [bundle, assets] = await Promise.all([
+        options.repository.getBundle(shot.value.projectId),
+        options.repository.listAssets(shot.value.projectId),
+      ]);
+      const accepted = await options.generator.submit(
+        buildCreativeShotGenerationRequest({
+          bundle,
+          assets,
+          shotId,
+          kind: input.kind,
+          route: input.route,
+          generationNonce: input.generationNonce,
+        }),
+        idempotencyKey,
+      );
+      reply.code(202);
+      return {
+        job_id: accepted.jobId,
+        status: accepted.status,
+        mode: accepted.mode,
+        provider: accepted.provider,
+        route: accepted.route,
+        estimated_cost_cny: accepted.estimatedCostCny,
+        status_url: accepted.statusUrl,
+        replayed: accepted.replayed,
+        ...(accepted.warning ? { warning: accepted.warning } : {}),
+      };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
   app.get('/v1/creative/projects/:projectId/exports/onecrew.zip', async (request, reply) => {
     if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
     if (!options.mediaStore) return creativeError(reply, new CreativeMediaStoreNotConfiguredError());
@@ -286,6 +351,20 @@ export class CreativeMediaStoreNotConfiguredError extends Error {
   }
 }
 
+export class CreativeGenerationNotConfiguredError extends Error {
+  constructor() {
+    super('Creative shot generation is not configured');
+    this.name = 'CreativeGenerationNotConfiguredError';
+  }
+}
+
+export class MissingCreativeGenerationIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for creative generation');
+    this.name = 'MissingCreativeGenerationIdempotencyKeyError';
+  }
+}
+
 export class InvalidCreativeArchiveError extends Error {
   constructor(message: string) {
     super(message);
@@ -296,7 +375,11 @@ export class InvalidCreativeArchiveError extends Error {
 function creativeError(reply: FastifyReply, error: unknown) {
   const code = (error as { code?: unknown } | undefined)?.code;
   const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof CreativeRoutesNotConfiguredError || error instanceof CreativeMediaStoreNotConfiguredError) {
+  if (
+    error instanceof CreativeRoutesNotConfiguredError ||
+    error instanceof CreativeMediaStoreNotConfiguredError ||
+    error instanceof CreativeGenerationNotConfiguredError
+  ) {
     reply.code(503);
   } else if (error instanceof RecordNotFoundError) {
     reply.code(404);
@@ -307,6 +390,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
   } else if (
     error instanceof ZodError ||
     error instanceof InvalidCreativeAssetBindingError ||
+    error instanceof MissingCreativeGenerationIdempotencyKeyError ||
     error instanceof InvalidCreativeArchiveError ||
     /LocalMiniDrama|Archive|project\.json|declared media file|archive root|absolute path/i.test(message)
   ) {

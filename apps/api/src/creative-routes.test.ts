@@ -1,5 +1,6 @@
 import {
   type CreativeProjectBundle,
+  type ProviderRequest,
   episodeSpecSchema,
   sceneSpecSchema,
   shotSpecSchema,
@@ -170,6 +171,7 @@ describe('creative routes', () => {
       status: 'draft',
     });
     let currentShot = shot;
+    let generationRequest: ProviderRequest | undefined;
     const bundle: CreativeProjectBundle = {
       bundleVersion: '1.0',
       source: { system: 'onecrew', importedAt: now },
@@ -232,6 +234,27 @@ describe('creative routes', () => {
             return { value: currentShot, version: shotVersion };
           },
         },
+        shotRepository: {
+          async get(id) {
+            if (id !== shotId) throw new Error('wrong shot');
+            return { value: currentShot, version: shotVersion };
+          },
+        },
+        generator: {
+          async submit(request) {
+            generationRequest = request;
+            return {
+              jobId: 'job_creative_generation',
+              status: 'queued',
+              mode: 'mock',
+              provider: 'mock-image-primary',
+              route: 'primary',
+              estimatedCostCny: 0.01,
+              statusUrl: '/v1/jobs/job_creative_generation',
+              replayed: false,
+            };
+          },
+        },
       },
     });
 
@@ -263,6 +286,41 @@ describe('creative routes', () => {
     });
     expect(entityResponse.statusCode).toBe(200);
     expect(entityResponse.json()).toMatchObject({ record: { name: '远古星门', location: '星海边界' }, version: 2 });
+
+    const missingGenerationKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/shots/${shotId}/generations`,
+      payload: { expectedVersion: 2, kind: 'image', generationNonce: 9 },
+    });
+    expect(missingGenerationKey.statusCode).toBe(400);
+
+    const generation = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/shots/${shotId}/generations`,
+      headers: { 'idempotency-key': 'creative_generation_1' },
+      payload: { expectedVersion: 2, kind: 'image', route: 'primary', generationNonce: 10 },
+    });
+    expect(generation.statusCode).toBe(202);
+    expect(generation.json()).toMatchObject({
+      job_id: 'job_creative_generation',
+      status: 'queued',
+      provider: 'mock-image-primary',
+    });
+    expect(generationRequest).toMatchObject({
+      capability: 'image',
+      projectId,
+      shotId,
+      prompt: '旧提示词',
+      generationNonce: 10,
+    });
+
+    const staleGeneration = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/shots/${shotId}/generations`,
+      headers: { 'idempotency-key': 'creative_generation_stale' },
+      payload: { expectedVersion: 1, kind: 'video', generationNonce: 11 },
+    });
+    expect(staleGeneration.statusCode).toBe(409);
 
     const conflict = await app.inject({
       method: 'PATCH',

@@ -20,6 +20,7 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 | --- | --- | --- |
 | Projects and scripts | Multiple projects and episodes, script plans, character/scene/prop libraries, and structured storyboards | Implemented |
 | Creative Studio | Script editing, storyboard list/canvas, character/scene/prop editing, asset binding, and final review | Implemented and browser-verified |
+| Single-shot generation | Generate images/videos from saved shots with entity references, previous-shot tail frames, continuity constraints, and asset version write-back | Mock browser-verified; Real requires credentials |
 | Project import/export | Import structured JSON or ZIP archives with media; export portable OneCrew archives with SHA-256 integrity data | Implemented and tested |
 | Concurrent editing | Optimistic episode/entity/shot versions, 409 conflict protection, and accepted-edit auditing | Implemented and tested |
 | Design system | Parse Open Design / `DESIGN.md` and compile immutable Design Packs | Implemented |
@@ -122,7 +123,9 @@ Open `http://127.0.0.1:4173/#studio` to work with a project:
 4. edit shot action, camera language, dialogue, narration, image/video prompts, negative prompt, and continuity notes;
 5. select a character, scene, or prop in the right-hand library; edit its common and type-specific fields, then bind versioned assets from the current project as references;
 6. save with the version shown in the editor. If another editor saved first, the stale update receives HTTP 409 and the Studio reloads the current server version instead of silently overwriting it;
-7. click **Export OneCrew Project** to download a complete, re-importable ZIP containing the project, episodes, entities, shots, frame prompts, versioned asset metadata, media, and a SHA-256 for every media file.
+7. after saving the shot, click **Generate storyboard image** or **Generate video**. The Studio follows the asynchronous Job; image requests preserve entity references, the previous shot's tail frame, and continuity notes, while video requests prefer the newest image version for the current shot. Successful outputs enter the asset library and link to the previous version through `parentAssetId`;
+8. read the visible `MOCK` or real-provider label. Mock mode is for local development and does not create real media. Real generation requires configured provider credentials and positive prices. Jobs that exceed the project budget enter the human gate instead of spending past the limit;
+9. click **Export OneCrew Project** to download a complete, re-importable ZIP containing the project, episodes, entities, shots, frame prompts, versioned asset metadata, media, and a SHA-256 for every media file.
 
 The Studio edits content and assets only. Approval, provider switching, and manual handoff still enter through the Feishu control plane so there is only one release-authority path.
 
@@ -194,6 +197,7 @@ The local API base URL is `http://127.0.0.1:3000`.
 | Health | `GET /healthz`, `GET /readyz` |
 | Creative projects | `GET /v1/creative/projects`, `GET /v1/creative/projects/:projectId` |
 | Script/shot editing | `PATCH /v1/creative/episodes/:episodeId`, `PATCH /v1/creative/shots/:shotId` |
+| Single-shot image/video generation | `POST /v1/creative/shots/:shotId/generations` |
 | Project import | `POST /v1/creative/imports/...` for structured JSON, OneCrew ZIP, and compatible ZIP archives |
 | Project export | `GET /v1/creative/projects/:projectId/exports/onecrew.zip` |
 | Script plan | `POST /v1/projects/:projectId/plan` |
@@ -350,11 +354,11 @@ docs/                   API, operations, configuration, and verification docs
 Latest complete local regression (2026-07-15):
 
 - lint, typecheck, and build passed across all 17 workspaces;
-- 79 unit tests passed;
+- 81 unit tests passed;
 - 33 integration tests passed;
 - a fresh database applied 8 migrations and produced 21 business tables plus 10 demo shots;
 - JSON and ZIP project imports passed API smoke tests; ZIP media was written to local MinIO and bound to versioned assets; a OneCrew export containing three real MinIO assets passed browser-download and ZIP-integrity checks;
-- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including project switching, script/shot saves, character/scene/prop editing, versioned-asset binding, version conflicts, canvas, export, and final review, with no errors or warnings in a clean browser session;
+- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including project switching, script/shot saves, character/scene/prop editing, versioned-asset binding, single-shot image/video generation, version-chain write-back, version conflicts, canvas, export, and final review, with no errors or warnings in a clean browser session;
 - all 10 Final MP4 files were H.264/AAC at 30 fps;
 - 15 technical QC checks and the Mock VLM decision passed;
 - the publish ZIP passed integrity checks for 14 entries, including eight bilingual promotional videos and twelve experiment seeds.

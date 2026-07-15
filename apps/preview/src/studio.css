@@ -215,6 +215,18 @@
 .inspector-grid { padding: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
 .inspector-grid .wide { grid-column: 1 / -1; }
 .inspector-grid textarea { min-height: 4.9rem; }
+.shot-generation { margin: 0 1rem 1rem; padding: 0.85rem; display: grid; grid-template-columns: minmax(0, 1fr) repeat(2, minmax(8rem, 0.42fr)); align-items: center; gap: 0.75rem; background: oklch(0.15 0.038 249 / 0.72); border: 1px solid var(--line); border-radius: 0.7rem; }
+.shot-generation > div:first-child > span { color: var(--teal); font: 0.58rem ui-monospace, monospace; letter-spacing: 0.08em; }
+.shot-generation > div:first-child > strong { margin-top: 0.3rem; display: block; font-size: 0.77rem; }
+.shot-generation p { margin: 0.28rem 0 0; color: var(--muted); font-size: 0.61rem; line-height: 1.5; }
+.generation-action { display: grid; gap: 0.35rem; }
+.generation-action button { min-height: 2.65rem; padding: 0 0.7rem; color: var(--ink); background: oklch(0.25 0.075 225 / 0.78); border: 1px solid oklch(0.62 0.11 190 / 0.42); border-radius: 0.55rem; font-weight: 700; cursor: pointer; }
+.generation-action button:hover:not(:disabled) { border-color: var(--teal); transform: translateY(-1px); }
+.generation-action button:disabled { cursor: not-allowed; opacity: 0.5; }
+.generation-action small { color: var(--muted); font: 0.54rem ui-monospace, monospace; text-align: center; }
+.generation-action small[data-status="succeeded"] { color: var(--teal); }
+.generation-action small[data-status="failed"], .generation-action small[data-status="cancelled"] { color: var(--danger); }
+.generation-action small[data-status="waiting_human"] { color: var(--amber); }
 .inspector-actions { padding: 0.8rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--line); }
 .inspector-actions > span { color: var(--muted); font: 0.62rem ui-monospace, monospace; }
 
@@ -299,7 +311,7 @@
   .studio-topbar { padding: 0.8rem 1rem; }
   .studio-actions .ghost { display: none; }
   .studio-button { padding-inline: 0.7rem; font-size: 0.72rem; }
-  .episode-nav, .entity-groups, .inspector-grid { grid-template-columns: 1fr; }
+  .episode-nav, .entity-groups, .inspector-grid, .shot-generation { grid-template-columns: 1fr; }
   .inspector-grid .wide { grid-column: auto; }
   .studio-main-header { align-items: flex-start; flex-direction: column; }
   .shot-card { grid-template-columns: 2.4rem minmax(0, 1fr); }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import type { CreativeEntity, EpisodeSpec, ProjectSpec, ShotSpec } from '@onecrew/contracts';
+import type { CreativeEntity, EpisodeSpec, JobStatus, ProjectSpec, ShotSpec } from '@onecrew/contracts';
 import {
   Background,
   Controls,
@@ -13,9 +13,11 @@ import '@xyflow/react/dist/style.css';
 
 import {
   downloadCreativeProject,
+  getCreativeJob,
   getCreativeProject,
   importCreativeArchive,
   listCreativeProjects,
+  submitCreativeShotGeneration,
   updateCreativeEntity,
   updateCreativeEpisode,
   updateCreativeShot,
@@ -25,6 +27,16 @@ import './studio.css';
 
 type StudioView = 'storyboards' | 'canvas';
 type SaveState = 'idle' | 'saving' | 'saved';
+type GenerationKind = 'image' | 'video';
+type GenerationStatus = 'idle' | 'submitting' | JobStatus;
+
+interface GenerationState {
+  status: GenerationStatus;
+  jobId?: string;
+  mode?: 'mock' | 'real';
+  provider?: string;
+  outputAssetIds?: string[];
+}
 
 interface EpisodeDraft {
   title: string;
@@ -133,6 +145,17 @@ const entityDetailLabels: Record<CreativeEntity['kind'], [string, string, string
   prop: ['分类', '', ''],
 };
 
+const generationStatusLabels: Record<GenerationStatus, string> = {
+  idle: '尚未提交',
+  submitting: '正在提交',
+  queued: '已进入队列',
+  running: '生成中',
+  waiting_human: '等待飞书预算审批',
+  succeeded: '已生成并登记新版本',
+  failed: '生成失败',
+  cancelled: '已取消',
+};
+
 function flowGraph(shots: ShotSpec[], selectedShotId: string | undefined): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = shots.map((shot, index) => ({
     id: shot.shotId,
@@ -177,8 +200,10 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [episodeForm, setEpisodeForm] = useState<EpisodeDraft>(() => episodeDraft(undefined));
   const [shotForm, setShotForm] = useState<ShotDraft>(() => shotDraft(undefined));
   const [entityForm, setEntityForm] = useState<EntityDraft>(() => entityDraft(undefined));
+  const [shotGenerations, setShotGenerations] = useState<Partial<Record<GenerationKind, GenerationState>>>({});
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
+  const generationSelectionRef = useRef('');
 
   const refreshProjects = async (preferredId?: string) => {
     const result = await listCreativeProjects();
@@ -224,6 +249,10 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const selectedEpisode = episodes.find((episode) => episode.episodeId === selectedEpisodeId);
   const selectedEntity = entities.find((entity) => entity.entityId === selectedEntityId);
   const graph = useMemo(() => flowGraph(episodeShots, selectedShotId), [episodeShots, selectedShotId]);
+  const shotDirty = useMemo(
+    () => Boolean(selectedShot && JSON.stringify(shotForm) !== JSON.stringify(shotDraft(selectedShot))),
+    [selectedShot, shotForm],
+  );
 
   useEffect(() => {
     setEpisodeForm(episodeDraft(selectedEpisode));
@@ -231,8 +260,10 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   }, [selectedProjectId, selectedEpisodeId]);
 
   useEffect(() => {
+    generationSelectionRef.current = `${selectedProjectId ?? ''}:${selectedShotId ?? ''}`;
     setShotForm(shotDraft(selectedShot));
     setShotSave('idle');
+    setShotGenerations({});
   }, [selectedProjectId, selectedShotId]);
 
   useEffect(() => {
@@ -359,6 +390,68 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
         setProject(latest);
         setShotForm(shotDraft(latest.bundle.shots.find((shot) => shot.shotId === selectedShot.shotId)));
       }
+    }
+  };
+
+  const handleShotGeneration = async (kind: GenerationKind) => {
+    if (!project || !selectedShot) return;
+    if (shotDirty) return setError('请先保存当前分镜修改，再提交生成任务。');
+    const expectedVersion = project.versions.shots[selectedShot.shotId];
+    if (!expectedVersion) return setError('无法读取当前分镜版本，请刷新页面。');
+    const selectionKey = `${selectedProjectId ?? ''}:${selectedShot.shotId}`;
+    const stillSelected = () => generationSelectionRef.current === selectionKey;
+    setError(undefined);
+    setShotGenerations((current) => ({ ...current, [kind]: { status: 'submitting' } }));
+    try {
+      const accepted = await submitCreativeShotGeneration(selectedShot.shotId, expectedVersion, kind);
+      if (!stillSelected()) return;
+      setShotGenerations((current) => ({
+        ...current,
+        [kind]: {
+          status: accepted.status,
+          jobId: accepted.job_id,
+          mode: accepted.mode,
+          provider: accepted.provider,
+        },
+      }));
+      if (accepted.status === 'waiting_human') return;
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        if (!stillSelected()) return;
+        const current = await getCreativeJob(accepted.job_id);
+        if (!stillSelected()) return;
+        setShotGenerations((generations) => ({
+          ...generations,
+          [kind]: {
+            status: current.job.status,
+            jobId: current.job.jobId,
+            mode: current.job.mode,
+            provider: current.job.provider,
+            outputAssetIds: current.job.outputAssetIds,
+          },
+        }));
+        if (current.job.status === 'succeeded') {
+          const refreshed = await getCreativeProject(selectedShot.projectId);
+          if (stillSelected()) setProject(refreshed);
+          return;
+        }
+        if (current.job.status === 'waiting_human') return;
+        if (current.job.status === 'failed' || current.job.status === 'cancelled') {
+          throw new Error(current.job.errorMessage ?? `生成任务已${current.job.status === 'failed' ? '失败' : '取消'}`);
+        }
+      }
+      throw new Error('生成任务仍在运行，可稍后刷新工程查看结果。');
+    } catch (reason) {
+      if (!stillSelected()) return;
+      setShotGenerations((current) => {
+        const previous = current[kind];
+        const status = previous && previous.status !== 'idle' && previous.status !== 'submitting'
+          ? previous.status
+          : 'failed';
+        return { ...current, [kind]: { ...previous, status } };
+      });
+      setError(reason instanceof Error ? reason.message : String(reason));
     }
   };
 
@@ -653,8 +746,36 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
                   <textarea rows={3} maxLength={4_000} value={shotForm.continuityNotes} onChange={(event) => changeShotField('continuityNotes', event.target.value)} />
                 </label>
               </div>
+              <section className="shot-generation" aria-label="单镜生成">
+                <div>
+                  <span>SINGLE SHOT GENERATION</span>
+                  <strong>当前分镜生成</strong>
+                  <p>使用已保存提示词、实体参考图、上一镜尾帧与连续性约束，结果进入版本资产链。</p>
+                </div>
+                {(['image', 'video'] as const).map((kind) => {
+                  const generation = shotGenerations[kind] ?? { status: 'idle' as const };
+                  const busy = ['submitting', 'queued', 'running'].includes(generation.status);
+                  return (
+                    <div className="generation-action" key={kind}>
+                      <button
+                        type="button"
+                        disabled={shotDirty || shotSave === 'saving' || busy}
+                        title={shotDirty ? '请先保存分镜修改' : undefined}
+                        onClick={() => void handleShotGeneration(kind)}
+                      >
+                        {busy ? '处理中…' : kind === 'image' ? '生成分镜图' : '生成视频'}
+                      </button>
+                      <small data-status={generation.status}>
+                        {generationStatusLabels[generation.status]}
+                        {generation.mode ? ` · ${generation.mode.toUpperCase()}` : ''}
+                        {generation.outputAssetIds?.length ? ` · v+${generation.outputAssetIds.length}` : ''}
+                      </small>
+                    </div>
+                  );
+                })}
+              </section>
               <div className="inspector-actions">
-                <span>首帧 {selectedShot.firstFrameAssetId ? '已绑定' : '未绑定'} · 尾帧 {selectedShot.lastFrameAssetId ? '已绑定' : '未绑定'}</span>
+                <span>{shotDirty ? '有未保存修改 · ' : ''}首帧 {selectedShot.firstFrameAssetId ? '已绑定' : '未绑定'} · 尾帧 {selectedShot.lastFrameAssetId ? '已绑定' : '未绑定'}</span>
                 <button type="submit" disabled={shotSave === 'saving'}>
                   {shotSave === 'saving' ? '保存中…' : shotSave === 'saved' ? '已保存 ✓' : '保存分镜'}
                 </button>

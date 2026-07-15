@@ -237,7 +237,12 @@ const cardActionService = new CardActionService({
 });
 const app = createApp({
   env,
-  creatives: { repository: repositories.creative, mediaStore },
+  creatives: {
+    repository: repositories.creative,
+    mediaStore,
+    shotRepository: repositories.shots,
+    generator: providerOrchestrator,
+  },
   feishu: {
     security: {
       ...(env.FEISHU_VERIFICATION_TOKEN

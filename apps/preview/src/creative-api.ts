@@ -3,6 +3,7 @@ import type {
   CreativeEntity,
   CreativeProjectBundle,
   EpisodeSpec,
+  JobRecord,
   ProjectSpec,
   ShotSpec,
 } from '@onecrew/contracts';
@@ -40,6 +41,24 @@ interface CreativeEditResponse<Record> {
   ok: true;
   record: Record;
   version: number;
+}
+
+export interface CreativeGenerationAccepted {
+  job_id: string;
+  status: 'queued' | 'waiting_human';
+  mode: 'mock' | 'real';
+  provider: string;
+  route: 'primary' | 'fallback';
+  estimated_cost_cny: number;
+  status_url: string;
+  replayed: boolean;
+  warning?: string;
+}
+
+export interface CreativeJobResponse {
+  job: JobRecord;
+  version: number;
+  output?: unknown;
 }
 
 export type EpisodeEditPatch = Partial<
@@ -178,6 +197,30 @@ export async function updateCreativeEntity(
     body: JSON.stringify({ ...editContext(expectedVersion), patch }),
   });
   return json<CreativeEditResponse<CreativeEntity>>(response);
+}
+
+export async function submitCreativeShotGeneration(
+  shotId: string,
+  expectedVersion: number,
+  kind: 'image' | 'video',
+): Promise<CreativeGenerationAccepted> {
+  const idempotencyKey = `studio_generation_${crypto.randomUUID()}`;
+  const response = await request(`/v1/creative/shots/${encodeURIComponent(shotId)}/generations`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'idempotency-key': idempotencyKey },
+    body: JSON.stringify({
+      expectedVersion,
+      kind,
+      route: 'primary',
+      generationNonce: Date.now(),
+    }),
+  });
+  return json<CreativeGenerationAccepted>(response);
+}
+
+export async function getCreativeJob(jobId: string): Promise<CreativeJobResponse> {
+  const response = await request(`/v1/jobs/${encodeURIComponent(jobId)}`);
+  return json<CreativeJobResponse>(response);
 }
 
 export async function downloadCreativeProject(projectId: string): Promise<void> {
