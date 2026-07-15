@@ -8,7 +8,7 @@
 bash scripts/bootstrap-local.sh
 ```
 
-脚本创建本地 `.env`、安装锁定依赖、启动 PostgreSQL/Redis/MinIO、应用 migration/seed、编译 Design Pack 与 workspace，随后用 Turbo 同时运行 API、Worker 和只读 Preview。飞书仍是唯一业务控制面，Preview 不允许修改业务状态。
+脚本创建本地 `.env`、安装锁定依赖、启动 PostgreSQL/Redis/MinIO，先生成契约并构建 workspace，再应用 migration/seed、编译 Design Pack，随后用 Turbo 同时运行 API、Worker 和只读 Preview。飞书仍是唯一业务控制面，Preview 不允许修改业务状态。
 
 生产式本地分进程运行：
 

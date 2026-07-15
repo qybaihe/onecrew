@@ -11,10 +11,10 @@ fi
 pnpm install --frozen-lockfile=false
 pnpm infra:up
 pnpm contracts:generate
+pnpm build
 pnpm db:migrate
 pnpm db:seed
 pnpm design:compile
 pnpm providers:check
-pnpm build
 
 exec pnpm dev

@@ -26,6 +26,7 @@ jobs:
       - run: pnpm infra:config
       - run: pnpm infra:up
       - run: pnpm contracts:generate
+      - run: pnpm build
       - run: pnpm db:check
       - run: pnpm db:migrate
       - run: pnpm db:seed
@@ -35,7 +36,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:unit
       - run: pnpm test:integration
-      - run: pnpm build
 
       - name: Infrastructure logs on failure
         if: failure()

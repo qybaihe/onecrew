@@ -80,9 +80,9 @@ bash scripts/bootstrap-local.sh
 1. 从 `.env.example` 创建未被 Git 跟踪的 `.env`；
 2. 安装 pnpm 锁定依赖；
 3. 启动 PostgreSQL、Redis 和 MinIO；
-4. 生成契约、执行数据库 migration 和 seed；
-5. 编译示例 Design Pack；
-6. 检查 Provider 路由并构建全部 workspace；
+4. 生成契约并构建全部 workspace；
+5. 执行数据库 migration 和 seed；
+6. 编译示例 Design Pack 并检查 Provider 路由；
 7. 以前台开发模式同时运行 API、Worker 和 Preview。
 
 启动完成后访问：
@@ -117,10 +117,10 @@ cp .env.example .env
 pnpm install
 pnpm infra:up
 pnpm contracts:generate
+pnpm build
 pnpm db:migrate
 pnpm db:seed
 pnpm design:compile
-pnpm build
 ```
 
 然后使用三个终端：

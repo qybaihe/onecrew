@@ -80,9 +80,9 @@ On the first run, the script:
 1. creates an untracked `.env` from `.env.example`;
 2. installs the locked pnpm dependencies;
 3. starts PostgreSQL, Redis, and MinIO;
-4. generates contracts and applies database migrations and seed data;
-5. compiles the demo Design Pack;
-6. validates provider routes and builds the workspace;
+4. generates contracts and builds the complete workspace;
+5. applies database migrations and seed data;
+6. compiles the demo Design Pack and validates provider routes;
 7. starts the API, Worker, and Preview app together in foreground development mode.
 
 After startup:
@@ -117,10 +117,10 @@ cp .env.example .env
 pnpm install
 pnpm infra:up
 pnpm contracts:generate
+pnpm build
 pnpm db:migrate
 pnpm db:seed
 pnpm design:compile
-pnpm build
 ```
 
 Then use three terminals:
