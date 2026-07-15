@@ -10,7 +10,7 @@
 
 OneCrew 是一个由飞书控制、API 驱动的中英双语 AI 短剧生产与宣传系统。它把项目立项、剧本与分镜、视觉规范、媒体生成、资产版本、自动质检、双语本地化、正式渲染、人工审批和发布包输出组织成一条可恢复、可审计的生产流水线。
 
-正式视频统一由 Remotion 渲染。项目业务状态保存在 PostgreSQL，媒体保存在 S3/MinIO，Redis/BullMQ 负责异步任务；飞书是业务控制面，本地 Preview 只用于审片。
+正式视频统一由 Remotion 渲染。项目业务状态保存在 PostgreSQL，媒体保存在 S3/MinIO，Redis/BullMQ 负责异步任务；飞书是唯一审批控制面，本地创作台负责工程浏览、素材组织、分镜画布、工程导入和成片审阅。
 
 > 当前版本：`0.1.0`。阶段 0～8 已完成本地实现和 Mock 端到端验证。真实模型、真实飞书租户和平台直发需要使用者自己的凭证与授权，仓库不会把 Mock 结果描述成真实厂商结果。
 
@@ -18,7 +18,9 @@ OneCrew 是一个由飞书控制、API 驱动的中英双语 AI 短剧生产与�
 
 | 模块 | 能力 | 当前状态 |
 | --- | --- | --- |
-| 项目与剧本 | 项目、角色、剧本计划、场景和 10 镜头连续分镜 | 已实现 |
+| 项目与剧本 | 多项目、多剧集、剧本计划、角色/场景/道具库和结构化分镜 | 已实现 |
+| 创作工作台 | 剧集导航、分镜列表、React Flow 画布、镜头详情、素材关系和成片审阅 | 已实现第一版 |
+| 工程导入 | 导入结构化 JSON 或含媒体的 ZIP，校验后写入 PostgreSQL 与 S3/MinIO | 已实现并测试 |
 | 设计系统 | 解析 Open Design / `DESIGN.md`，编译不可变 Design Pack | 已实现 |
 | Provider Gateway | LLM、VLM、图片、视频、TTS 的 Primary/Fallback 路由 | Mock 已实测；Real Adapter 已实现 |
 | 任务系统 | BullMQ 队列、幂等键、预算闸门、重试、取消、回调签名 | 已实现并测试 |
@@ -34,7 +36,8 @@ OneCrew 是一个由飞书控制、API 驱动的中英双语 AI 短剧生产与�
 
 ```mermaid
 flowchart LR
-  A["飞书 / HTTP API"] --> B["Fastify API"]
+  L["本地创作台"] --> B["Fastify API"]
+  A["飞书 / HTTP API"] --> B
   B --> C["PostgreSQL"]
   B --> D["Redis / BullMQ"]
   D --> E["Worker"]
@@ -91,7 +94,7 @@ bash scripts/bootstrap-local.sh
 | --- | --- |
 | `http://127.0.0.1:3000/healthz` | API 进程存活检查 |
 | `http://127.0.0.1:3000/readyz` | PostgreSQL、Redis、MinIO 就绪检查 |
-| `http://127.0.0.1:4173` | 只读 Remotion Player 审片页 |
+| `http://127.0.0.1:4173` | 创作台、分镜画布和 Remotion Player 审片页 |
 | `http://127.0.0.1:59001` | MinIO 本地管理控制台 |
 
 验证服务：
@@ -132,7 +135,7 @@ pnpm start:api
 # 终端 2：Worker
 pnpm start:worker
 
-# 终端 3：Preview
+# 终端 3：创作台与审片页
 pnpm preview:dev
 ```
 
@@ -174,6 +177,8 @@ pnpm demo:mock-e2e
 | 功能 | 端点 |
 | --- | --- |
 | 健康检查 | `GET /healthz`、`GET /readyz` |
+| 创作项目 | `GET /v1/creative/projects`、`GET /v1/creative/projects/:projectId` |
+| 工程导入 | `POST /v1/creative/imports/...`，支持结构化 JSON 与含媒体 ZIP |
 | 剧本计划 | `POST /v1/projects/:projectId/plan` |
 | 图片生成 | `POST /v1/images/generate` |
 | 视频生成 | `POST /v1/shots/generate` |
@@ -255,7 +260,7 @@ pnpm feishu:setup
 | `pnpm dev` | 并行启动所有支持 dev 的 workspace |
 | `pnpm start:api` | 启动 API 进程 |
 | `pnpm start:worker` | 启动异步 Worker |
-| `pnpm preview:dev` | 启动只读审片页 |
+| `pnpm preview:dev` | 启动创作台、分镜画布和审片页 |
 | `pnpm remotion:studio` | 打开 Remotion Studio |
 | `pnpm remotion:demo` | 渲染固定示例 Composition |
 | `pnpm remotion:final-smoke` | 运行 Final 渲染烟雾测试 |
@@ -270,7 +275,7 @@ pnpm feishu:setup
 | `pnpm typecheck` | TypeScript 全仓检查 |
 | `pnpm test:unit` | 运行单元测试 |
 | `pnpm test:integration` | 运行依赖 PostgreSQL/Redis/MinIO 的集成测试 |
-| `pnpm build` | 构建全部 16 个 package/app |
+| `pnpm build` | 构建全部 17 个 package/app |
 | `pnpm readme:check` | 检查中英文 README 是否同步且关键命令存在 |
 
 推荐提交前运行：
@@ -291,10 +296,11 @@ apps/
   api/                 Fastify API、健康检查和 HTTP 路由
   worker/              BullMQ Worker、生成/渲染/QC/发布消费者
   remotion/            Composition、组件、Player 与唯一 Final Renderer
-  preview/             只读审片页面
+  preview/             React 创作台、分镜画布与 Remotion 审片页
 packages/
   config/              Zod 环境变量契约
   contracts/           共享契约与 JSON Schema
+  creative/            创作领域模型、工程导入与媒体物化
   domain/              状态机、版本和输入哈希
   db/                  Drizzle schema、migration、seed、repository
   design-adapter/      Open Design 解析与 Design Pack 编译
@@ -318,16 +324,18 @@ docs/                   API、运维、配置、验证与设计文档
 - 资产记录来源、Provider、模型、seed、内容哈希和许可证。
 - 缓存任务复用原资产 ID；重生成创建新版本，并通过 `parentAssetId` 连接前一版。
 - 飞书只保存控制信息和受控链接，不承担大文件存储。
-- Preview 不允许修改项目状态，审批动作只通过飞书控制面进入。
+- 创作台可以组织创作数据与媒体，但不提供审批、放行或网页模型切换；这些动作只通过飞书控制面进入。
 
 ## 测试与当前完成度
 
 最近一次完整本地回归（2026-07-15）：
 
-- 16 个 workspace 的 lint、typecheck 和 build 全部通过；
-- 69 个单元测试通过；
-- 32 个集成测试通过；
-- 空数据库成功应用 7 个 migration，得到 18 张业务表和 10 个演示镜头；
+- 17 个 workspace 的 lint、typecheck 和 build 全部通过；
+- 76 个单元测试通过；
+- 33 个集成测试通过；
+- 空数据库成功应用 8 个 migration，得到 21 张业务表和 10 个演示镜头；
+- JSON 与 ZIP 工程导入已通过 API 烟雾测试，ZIP 媒体真实写入本地 MinIO 并绑定版本化资产；
+- 创作台已在桌面与 `390 × 844` 移动视口验证，项目切换、画布节点、镜头详情和成片审阅可用，浏览器控制台无错误或警告；
 - 10 支 Final MP4 均为 H.264/AAC、30fps；
 - QC 15 项技术检查和 Mock VLM 判定全部通过；
 - 发布 ZIP 14 个条目完整，包含 8 支双语宣发视频和 12 条实验种子。

@@ -81,6 +81,119 @@ const isoTimestampSchema = z.iso.datetime({ offset: true });
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const nonNegativeMoneySchema = z.number().finite().nonnegative();
 
+export const creativeSourceSchema = z.object({
+  system: z.enum(['onecrew', 'local-mini-drama', 'manual', 'import']),
+  version: z.string().min(1).max(80).optional(),
+  reference: z.string().min(1).max(2_000).optional(),
+  license: z.string().min(1).max(200).optional(),
+  importedAt: isoTimestampSchema.optional(),
+});
+
+export const episodeStatusSchema = z.enum(['draft', 'planning', 'ready', 'rendered', 'archived']);
+export const creativeEntityStatusSchema = z.enum(['draft', 'ready', 'archived']);
+export const creativeEntityKindSchema = z.enum(['character', 'scene', 'prop']);
+export const creationModeSchema = z.enum(['classic', 'universal']);
+export const frameTypeSchema = z.enum(['first', 'last', 'key']);
+
+export const continuityCharacterStateSchema = z.object({
+  position: z.string().max(500).optional(),
+  clothing: z.string().max(1_000).optional(),
+  expression: z.string().max(500).optional(),
+  props: z.array(idSchema).default([]),
+});
+
+export const continuitySnapshotSchema = z.object({
+  sourceShotId: idSchema.optional(),
+  characters: z.record(idSchema, continuityCharacterStateSchema).default({}),
+  lighting: z.string().max(1_000).optional(),
+  cameraAxis: z.string().max(500).optional(),
+  notes: z.string().max(4_000).optional(),
+});
+
+export const episodeSpecSchema = z.object({
+  episodeId: idSchema,
+  projectId: idSchema,
+  episodeNumber: z.number().int().positive(),
+  title: z.string().min(1).max(300),
+  description: z.string().max(10_000).optional(),
+  scriptContent: z.string().max(200_000).default(''),
+  durationSec: z.number().finite().nonnegative().max(7_200).default(0),
+  characterIds: z.array(idSchema).default([]),
+  sceneIds: z.array(idSchema).default([]),
+  propIds: z.array(idSchema).default([]),
+  status: episodeStatusSchema.default('draft'),
+  source: creativeSourceSchema.optional(),
+});
+
+const creativeEntityBaseSchema = z.object({
+  entityId: idSchema,
+  projectId: idSchema,
+  episodeId: idSchema.optional(),
+  name: z.string().min(1).max(300),
+  description: z.string().max(10_000).optional(),
+  prompt: z.string().max(20_000).optional(),
+  polishedPrompt: z.string().max(20_000).optional(),
+  negativePrompt: z.string().max(10_000).optional(),
+  referenceAssetIds: z.array(idSchema).default([]),
+  extraAssetIds: z.array(idSchema).default([]),
+  sortOrder: z.number().int().nonnegative().default(0),
+  status: creativeEntityStatusSchema.default('draft'),
+  source: creativeSourceSchema.optional(),
+});
+
+export const characterSpecSchema = creativeEntityBaseSchema.extend({
+  kind: z.literal('character'),
+  role: z.string().max(500).optional(),
+  personality: z.string().max(4_000).optional(),
+  appearance: z.string().max(10_000).optional(),
+  voiceStyle: z.string().max(2_000).optional(),
+  identityAnchors: z.array(z.string().min(1).max(1_000)).default([]),
+  styleTokens: z.array(z.string().min(1).max(500)).default([]),
+  colorPalette: z.array(z.string().min(1).max(100)).default([]),
+  stages: z
+    .array(
+      z.object({
+        stageId: idSchema,
+        name: z.string().min(1).max(200),
+        description: z.string().max(4_000).optional(),
+        clothing: z.string().max(2_000).optional(),
+        referenceAssetIds: z.array(idSchema).default([]),
+      }),
+    )
+    .default([]),
+  providerAssetRef: z.string().max(2_000).optional(),
+});
+
+export const sceneSpecSchema = creativeEntityBaseSchema.extend({
+  kind: z.literal('scene'),
+  location: z.string().min(1).max(500),
+  timeOfDay: z.string().max(200).optional(),
+  atmosphere: z.string().max(2_000).optional(),
+  lightingStyle: z.string().max(2_000).optional(),
+});
+
+export const propSpecSchema = creativeEntityBaseSchema.extend({
+  kind: z.literal('prop'),
+  category: z.string().max(300).optional(),
+});
+
+export const creativeEntitySchema = z.discriminatedUnion('kind', [
+  characterSpecSchema,
+  sceneSpecSchema,
+  propSpecSchema,
+]);
+
+export const framePromptSpecSchema = z.object({
+  framePromptId: idSchema,
+  shotId: idSchema,
+  frameType: frameTypeSchema,
+  prompt: z.string().min(1).max(20_000),
+  description: z.string().max(4_000).optional(),
+  layout: z.string().max(10_000).optional(),
+  boundAssetId: idSchema.optional(),
+  source: creativeSourceSchema.optional(),
+});
+
 export const projectSpecSchema = z.object({
   projectId: idSchema,
   nameZh: z.string().min(1).max(200),
@@ -93,6 +206,10 @@ export const projectSpecSchema = z.object({
   aspectRatios: z.array(aspectRatioSchema).min(1).max(3),
   budgetLimitCny: nonNegativeMoneySchema,
   designSystemId: idSchema.optional(),
+  style: z.string().max(500).optional(),
+  tags: z.array(z.string().min(1).max(100)).optional(),
+  totalEpisodes: z.number().int().positive().optional(),
+  source: creativeSourceSchema.optional(),
   status: projectStatusSchema,
 });
 
@@ -103,16 +220,106 @@ export const shotSpecSchema = z.object({
   durationSec: z.number().positive().max(120),
   characters: z.array(idSchema),
   sceneId: idSchema,
+  episodeId: idSchema.optional(),
+  propIds: z.array(idSchema).optional(),
+  title: z.string().max(500).optional(),
+  description: z.string().max(10_000).optional(),
+  location: z.string().max(500).optional(),
+  timeOfDay: z.string().max(200).optional(),
   action: z.string().min(1).max(5_000),
   camera: z.string().min(1).max(1_000),
   dialogueZh: z.string().max(5_000).optional(),
+  narrationZh: z.string().max(5_000).optional(),
+  atmosphere: z.string().max(2_000).optional(),
+  result: z.string().max(2_000).optional(),
+  shotType: z.string().max(200).optional(),
+  cameraAngle: z
+    .object({
+      horizontal: z.string().max(200).optional(),
+      vertical: z.string().max(200).optional(),
+      side: z.string().max(200).optional(),
+    })
+    .optional(),
+  movement: z.string().max(500).optional(),
+  lightingStyle: z.string().max(1_000).optional(),
+  depthOfField: z.string().max(500).optional(),
   prompt: z.string().min(1).max(10_000),
+  imagePrompt: z.string().max(20_000).optional(),
+  polishedPrompt: z.string().max(20_000).optional(),
+  videoPrompt: z.string().max(20_000).optional(),
   negativePrompt: z.string().max(5_000).optional(),
   referenceAssetIds: z.array(idSchema),
+  framePromptIds: z.array(idSchema).optional(),
+  firstFrameAssetId: idSchema.optional(),
+  lastFrameAssetId: idSchema.optional(),
+  emotion: z.string().max(500).optional(),
+  emotionIntensity: z.number().min(0).max(1).optional(),
+  segmentIndex: z.number().int().nonnegative().optional(),
+  segmentTitle: z.string().max(500).optional(),
+  continuity: continuitySnapshotSchema.optional(),
+  creationMode: creationModeSchema.optional(),
+  universalSegmentText: z.string().max(20_000).optional(),
+  layoutDescription: z.string().max(10_000).optional(),
+  source: creativeSourceSchema.optional(),
   importance: z.enum(['normal', 'hero']),
   closeupDialogue: z.boolean(),
   status: shotStatusSchema,
 });
+
+export const creativeProjectBundleSchema = z
+  .object({
+    bundleVersion: z.literal('1.0'),
+    source: creativeSourceSchema,
+    project: projectSpecSchema,
+    episodes: z.array(episodeSpecSchema).min(1),
+    entities: z.array(creativeEntitySchema),
+    shots: z.array(shotSpecSchema),
+    framePrompts: z.array(framePromptSpecSchema).default([]),
+    mediaFiles: z
+      .array(
+        z.object({
+          sourcePath: z.string().min(1).max(2_000),
+          mediaType: z.enum(['image', 'video', 'audio']),
+          ownerType: z.enum(['entity', 'shot', 'frame']),
+          ownerId: idSchema,
+          role: z.string().min(1).max(200),
+          originalId: z.union([z.string(), z.number()]).optional(),
+        }),
+      )
+      .default([]),
+  })
+  .superRefine((bundle, context) => {
+    const projectId = bundle.project.projectId;
+    const episodeIds = new Set(bundle.episodes.map((episode) => episode.episodeId));
+    const entityIds = new Set(bundle.entities.map((entity) => entity.entityId));
+    const shotIds = new Set(bundle.shots.map((shot) => shot.shotId));
+    for (const [index, episode] of bundle.episodes.entries()) {
+      if (episode.projectId !== projectId) {
+        context.addIssue({ code: 'custom', path: ['episodes', index, 'projectId'], message: 'must match project' });
+      }
+    }
+    for (const [index, entity] of bundle.entities.entries()) {
+      if (entity.projectId !== projectId) {
+        context.addIssue({ code: 'custom', path: ['entities', index, 'projectId'], message: 'must match project' });
+      }
+    }
+    for (const [index, shot] of bundle.shots.entries()) {
+      if (shot.projectId !== projectId) {
+        context.addIssue({ code: 'custom', path: ['shots', index, 'projectId'], message: 'must match project' });
+      }
+      if (shot.episodeId && !episodeIds.has(shot.episodeId)) {
+        context.addIssue({ code: 'custom', path: ['shots', index, 'episodeId'], message: 'must reference an episode' });
+      }
+      if (!entityIds.has(shot.sceneId)) {
+        context.addIssue({ code: 'custom', path: ['shots', index, 'sceneId'], message: 'must reference a scene' });
+      }
+    }
+    for (const [index, frame] of bundle.framePrompts.entries()) {
+      if (!shotIds.has(frame.shotId)) {
+        context.addIssue({ code: 'custom', path: ['framePrompts', index, 'shotId'], message: 'must reference a shot' });
+      }
+    }
+  });
 
 export const designPackManifestSchema = z.object({
   designSystemId: idSchema,
@@ -778,6 +985,14 @@ export const providerCallbackSchema = z.object({
 
 export const contractSchemas = {
   ProjectSpec: projectSpecSchema,
+  EpisodeSpec: episodeSpecSchema,
+  CharacterSpec: characterSpecSchema,
+  SceneSpec: sceneSpecSchema,
+  PropSpec: propSpecSchema,
+  CreativeEntity: creativeEntitySchema,
+  ContinuitySnapshot: continuitySnapshotSchema,
+  FramePromptSpec: framePromptSpecSchema,
+  CreativeProjectBundle: creativeProjectBundleSchema,
   ShotSpec: shotSpecSchema,
   DesignPackManifest: designPackManifestSchema,
   LocalePack: localePackSchema,
@@ -814,6 +1029,11 @@ export type AspectRatio = z.infer<typeof aspectRatioSchema>;
 export type ProjectStatus = z.infer<typeof projectStatusSchema>;
 export type ShotStatus = z.infer<typeof shotStatusSchema>;
 export type AssetStatus = z.infer<typeof assetStatusSchema>;
+export type EpisodeStatus = z.infer<typeof episodeStatusSchema>;
+export type CreativeEntityStatus = z.infer<typeof creativeEntityStatusSchema>;
+export type CreativeEntityKind = z.infer<typeof creativeEntityKindSchema>;
+export type CreationMode = z.infer<typeof creationModeSchema>;
+export type FrameType = z.infer<typeof frameTypeSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type RenderStatus = z.infer<typeof renderStatusSchema>;
 export type RenderMode = z.infer<typeof renderModeSchema>;
@@ -825,6 +1045,15 @@ export type ExperimentPlatform = z.infer<typeof experimentPlatformSchema>;
 export type Capability = z.infer<typeof capabilitySchema>;
 export type CompositionId = z.infer<typeof compositionIdSchema>;
 export type ProjectSpec = z.infer<typeof projectSpecSchema>;
+export type CreativeSource = z.infer<typeof creativeSourceSchema>;
+export type EpisodeSpec = z.infer<typeof episodeSpecSchema>;
+export type CharacterSpec = z.infer<typeof characterSpecSchema>;
+export type SceneSpec = z.infer<typeof sceneSpecSchema>;
+export type PropSpec = z.infer<typeof propSpecSchema>;
+export type CreativeEntity = z.infer<typeof creativeEntitySchema>;
+export type ContinuitySnapshot = z.infer<typeof continuitySnapshotSchema>;
+export type FramePromptSpec = z.infer<typeof framePromptSpecSchema>;
+export type CreativeProjectBundle = z.infer<typeof creativeProjectBundleSchema>;
 export type ShotSpec = z.infer<typeof shotSpecSchema>;
 export type DesignPackManifest = z.infer<typeof designPackManifestSchema>;
 export type LocalePack = z.infer<typeof localePackSchema>;

@@ -1,101 +1,86 @@
 {
-  "$id": "https://onecrew.local/schemas/ProjectSpec.schema.json",
-  "title": "ProjectSpec",
+  "$id": "https://onecrew.local/schemas/EpisodeSpec.schema.json",
+  "title": "EpisodeSpec",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "episodeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
     "projectId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
     },
-    "nameZh": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200
-    },
-    "nameEn": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200
-    },
-    "synopsis": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 10000
-    },
-    "audience": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 1000
-    },
-    "genres": {
-      "minItems": 1,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 80
-      }
-    },
-    "ownerOpenId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-    },
-    "locales": {
-      "minItems": 1,
-      "maxItems": 2,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": [
-          "zh-CN",
-          "en-US"
-        ]
-      }
-    },
-    "aspectRatios": {
-      "minItems": 1,
-      "maxItems": 3,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": [
-          "16:9",
-          "9:16",
-          "1:1"
-        ]
-      }
-    },
-    "budgetLimitCny": {
-      "type": "number",
-      "minimum": 0
-    },
-    "designSystemId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-    },
-    "style": {
-      "type": "string",
-      "maxLength": 500
-    },
-    "tags": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 100
-      }
-    },
-    "totalEpisodes": {
+    "episodeNumber": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 10000
+    },
+    "scriptContent": {
+      "default": "",
+      "type": "string",
+      "maxLength": 200000
+    },
+    "durationSec": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 7200
+    },
+    "characterIds": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "sceneIds": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "propIds": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "status": {
+      "default": "draft",
+      "type": "string",
+      "enum": [
+        "draft",
+        "planning",
+        "ready",
+        "rendered",
+        "archived"
+      ]
     },
     "source": {
       "type": "object",
@@ -134,29 +119,18 @@
         "system"
       ],
       "additionalProperties": false
-    },
-    "status": {
-      "type": "string",
-      "enum": [
-        "draft",
-        "running",
-        "waiting_human",
-        "done",
-        "failed"
-      ]
     }
   },
   "required": [
+    "episodeId",
     "projectId",
-    "nameZh",
-    "nameEn",
-    "synopsis",
-    "audience",
-    "genres",
-    "ownerOpenId",
-    "locales",
-    "aspectRatios",
-    "budgetLimitCny",
+    "episodeNumber",
+    "title",
+    "scriptContent",
+    "durationSec",
+    "characterIds",
+    "sceneIds",
+    "propIds",
     "status"
   ],
   "additionalProperties": false

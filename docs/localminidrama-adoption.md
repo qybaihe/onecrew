@@ -1,0 +1,70 @@
+# LocalMiniDrama 能力吸收账本
+
+> 本文件是 OneCrew 的内部工程迁移账本。目标不是把上游仓库作为子系统运行，而是把其创作能力迁入 OneCrew 技术栈，并在生产编排、审计、质检、本地化和正式渲染方面达到更高完成度。
+
+## 基线与许可证
+
+- 上游：`xuanyustudio/LocalMiniDrama`
+- 审计提交：`92c66dd75688d83aac3ccc31bb51378613122cbc`
+- 上游版本：`1.2.8`，工程导出格式：`1.4`
+- 许可证：MIT；实质移植的代码必须保留版权和许可声明。
+- OneCrew 技术边界：TypeScript、Fastify、PostgreSQL/Drizzle、Redis/BullMQ、MinIO/S3、React、Remotion。
+
+状态约定：`未开始`、`设计完成`、`实现中`、`已验证`、`不引入`。
+
+## 产品能力矩阵
+
+| 能力 | 上游实现 | OneCrew 目标实现 | 状态 |
+|---|---|---|---|
+| 项目管理 | Drama 列表、详情、软删除 | ProjectSpec + 创作项目 API + React 项目页 | 已验证 |
+| 多剧集 | episodes、分集剧本和时长 | EpisodeSpec + PostgreSQL episodes | 已验证 |
+| 故事生成 | 多集故事 JSON 生成 | Provider Gateway 的结构化故事规划 | 未开始 |
+| 剧本编辑 | 分集 script_content 编辑 | React 剧本编辑器 + 版本/审计 | 未开始 |
+| 角色提取与生成 | 角色描述、形象、多图、四视图 | CharacterSpec + 角色身份锚点 + 版本化资产 | 实现中 |
+| 角色阶段造型 | stages、服装和身份锚点 | CharacterSpec.stages + 连续性约束 | 已验证 |
+| 场景提取与生成 | 场景库、时间、提示词、多图 | SceneSpec + 项目/全局素材检索 | 实现中 |
+| 道具提取与生成 | 道具库、提示词、多图 | PropSpec + 镜头关系 | 已验证 |
+| 全局素材库 | 角色/场景/道具复用与去重 | PostgreSQL 检索 + S3 资产版本复用 | 未开始 |
+| 结构化分镜 | 景别、角度、运镜、灯光、景深 | 扩展 ShotSpec 与 JSON Schema | 已验证 |
+| 经典/全能模式 | classic/universal segment | ShotSpec.creationMode + Provider 请求构建 | 实现中 |
+| 首尾帧提示词 | frame_prompts | FramePromptSpec + 首尾帧资产绑定 | 已验证 |
+| 分镜图片历史 | image_generations 完整历史 | AssetRecord 父版本链 + 镜头绑定 | 已验证 |
+| 视频生成历史 | video_generations | JobRecord + AssetRecord 版本链 | 已验证 |
+| 连续性快照 | continuity_snapshot | ContinuitySnapshot + QC 检查 | 实现中 |
+| 尾帧衔接 | 上一镜尾帧作为下一镜参考 | ShotSpec 首尾帧关系 + Provider reference assets | 实现中 |
+| 四宫格/多参考图 | sharp 切图、`@图片N` | Media 预处理 + Provider 多参考图契约 | 未开始 |
+| 图片/视频提示词编辑 | 分镜级编辑与重建 | React 分镜编辑器 + 版本审计 | 未开始 |
+| TTS 与旁白 | 对白、旁白、本地音频 | 中英 Locale Pack + TTS Job + 旁白字段 | 实现中 |
+| 批量生成 | 缺失项跳过、并发、停止和重试 | BullMQ 幂等批任务 + 取消/重试/成本 | 未开始 |
+| 工作流分组 | 框选分镜、组合步骤、整组重跑 | Creative Workflow Group + LangGraph/BullMQ | 未开始 |
+| 列表编辑视图 | FilmCreate | React 创作工作台列表模式 | 未开始 |
+| 画布视图 | Vue Flow DramaCanvas | React Flow 创作画布；不含审批动作 | 已验证 |
+| 工程 ZIP 导入 | project.json + media，格式 1.4 | LocalMiniDrama ZIP Adapter + MinIO 导入 | 已验证 |
+| 工程 ZIP 导出 | 全量数据和媒体打包 | OneCrew Creative Bundle + 兼容导出 | 未开始 |
+| AI 配置 | 本地页面和 SQLite 明文配置 | 不复制 UI；环境/Secret Manager + Provider Adapter | 不引入 |
+| 多 Provider | 通义、火山、可灵、Gemini、Vidu 等 | 每能力主备两条路由，按需求移植适配 | 实现中 |
+| 本地 SQLite | better-sqlite3 | PostgreSQL + Drizzle，保持审计和并发能力 | 不引入 |
+| Electron 桌面壳 | Windows EXE | 先交付 Web/Docker；桌面壳不是核心依赖 | 不引入 |
+| FFmpeg 视频拼接 | 镜头顺序合并 | 仅媒体预处理/QC；正式渲染仍为 Remotion | 不引入 |
+| 审批工作台 | 上游没有完整企业审批 | 飞书卡片四动作，不新建网页审批台 | 已验证 |
+| 中英本地化 | 非核心能力 | Locale Pack、TTS 时长适配和英文成片 | 已验证 |
+| 自动 QC | 基础生成状态 | FFmpeg 技术 QC + VLM 语义 QC + 人工门 | 已验证 |
+| 宣传物料 | 单集视频为主 | 预告、竖版、贴片、动态海报、静态海报 | 已验证 |
+
+## 第一条纵向切片验收条件
+
+1. `CreativeProjectBundle`、`EpisodeSpec`、`CharacterSpec`、`SceneSpec`、`PropSpec`、`FramePromptSpec` 均有 Zod 契约和生成的 JSON Schema。
+2. `ShotSpec` 能无损表达上游结构化分镜、首尾帧和连续性字段，同时兼容已有 OneCrew 数据。
+3. PostgreSQL 能持久化剧集、创作实体和帧提示词，并保持项目/镜头级联关系、唯一约束与版本字段。
+4. LocalMiniDrama `project.json` 1.4 能转为 OneCrew Creative Bundle；未知字段不会污染核心契约，错误输入有明确验证错误。
+5. 导入 API 支持 JSON 和 ZIP，媒体进入 S3/MinIO，导入记录来源提交、格式版本、哈希和许可证。
+6. 单元测试覆盖字段映射、跨数组索引关系、场景去重、首尾帧绑定和恶意 ZIP 路径拒绝。
+7. 集成测试证明导入事务可落库并可完整读回。
+
+## 明确不复制的核心负担
+
+- 不运行第二套后端、数据库、队列或桌面进程。
+- 不增加网页审批、网页放行或网页模型切换入口。
+- 不在数据库业务字段、飞书或日志中保存 Provider Key。
+- 不允许导入器覆盖既有项目；冲突必须使用确定性新 ID 或显式拒绝。
+- 不允许 ZIP 路径穿越、超大解压、符号链接或未声明媒体类型。

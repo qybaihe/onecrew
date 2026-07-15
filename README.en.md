@@ -10,7 +10,7 @@ English · [简体中文](./README.md)
 
 OneCrew is a Feishu-controlled, API-driven production system for bilingual Chinese and English AI short dramas and promotional media. It organizes project setup, scripts and storyboards, visual rules, media generation, asset versioning, automated quality control, localization, final rendering, human approval, and publish-package export into a recoverable and auditable pipeline.
 
-Remotion is the only final video renderer. PostgreSQL stores business state, S3/MinIO stores controlled media, Redis/BullMQ runs asynchronous jobs, Feishu is the business control plane, and the local Preview app is read-only.
+Remotion is the only final video renderer. PostgreSQL stores business state, S3/MinIO stores controlled media, and Redis/BullMQ runs asynchronous jobs. Feishu is the only approval control plane, while the local Studio handles project browsing, asset organization, the storyboard canvas, project import, and final review.
 
 > Current version: `0.1.0`. Stages 0–8 have been implemented and verified through a local deterministic Mock end-to-end run. Real model providers, a real Feishu tenant, and direct platform publishing require the operator's own credentials and authorization. Mock results are never presented as real provider output.
 
@@ -18,7 +18,9 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 
 | Area | Capability | Status |
 | --- | --- | --- |
-| Projects and scripts | Projects, characters, script plans, scenes, and a continuous 10-shot storyboard | Implemented |
+| Projects and scripts | Multiple projects and episodes, script plans, character/scene/prop libraries, and structured storyboards | Implemented |
+| Creative Studio | Episode navigation, storyboard list, React Flow canvas, shot details, asset relationships, and final review | First version implemented |
+| Project import | Import structured JSON or ZIP archives with media into PostgreSQL and S3/MinIO after validation | Implemented and tested |
 | Design system | Parse Open Design / `DESIGN.md` and compile immutable Design Packs | Implemented |
 | Provider Gateway | Primary/Fallback routing for LLM, VLM, image, video, and TTS providers | Mock verified; Real adapters implemented |
 | Job system | BullMQ queues, idempotency, budget gates, retries, cancellation, and signed callbacks | Implemented and tested |
@@ -34,7 +36,8 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 
 ```mermaid
 flowchart LR
-  A["Feishu / HTTP API"] --> B["Fastify API"]
+  L["Local Creative Studio"] --> B["Fastify API"]
+  A["Feishu / HTTP API"] --> B
   B --> C["PostgreSQL"]
   B --> D["Redis / BullMQ"]
   D --> E["Worker"]
@@ -91,7 +94,7 @@ After startup:
 | --- | --- |
 | `http://127.0.0.1:3000/healthz` | API liveness |
 | `http://127.0.0.1:3000/readyz` | PostgreSQL, Redis, and MinIO readiness |
-| `http://127.0.0.1:4173` | Read-only Remotion Player review page |
+| `http://127.0.0.1:4173` | Creative Studio, storyboard canvas, and Remotion Player review page |
 | `http://127.0.0.1:59001` | Local MinIO administration console |
 
 Verify the environment:
@@ -132,7 +135,7 @@ pnpm start:api
 # Terminal 2: Worker
 pnpm start:worker
 
-# Terminal 3: Preview
+# Terminal 3: Creative Studio and review app
 pnpm preview:dev
 ```
 
@@ -174,6 +177,8 @@ The local API base URL is `http://127.0.0.1:3000`.
 | Purpose | Endpoint |
 | --- | --- |
 | Health | `GET /healthz`, `GET /readyz` |
+| Creative projects | `GET /v1/creative/projects`, `GET /v1/creative/projects/:projectId` |
+| Project import | `POST /v1/creative/imports/...` for structured JSON and ZIP archives with media |
 | Script plan | `POST /v1/projects/:projectId/plan` |
 | Image generation | `POST /v1/images/generate` |
 | Video generation | `POST /v1/shots/generate` |
@@ -255,7 +260,7 @@ Table definitions, minimum permissions, event subscriptions, and callback securi
 | `pnpm dev` | Run every workspace with a dev task in parallel |
 | `pnpm start:api` | Start the API process |
 | `pnpm start:worker` | Start the asynchronous Worker |
-| `pnpm preview:dev` | Start the read-only review app |
+| `pnpm preview:dev` | Start the Creative Studio, storyboard canvas, and review app |
 | `pnpm remotion:studio` | Open Remotion Studio |
 | `pnpm remotion:demo` | Render the fixed demo Compositions |
 | `pnpm remotion:final-smoke` | Run the Final-render smoke test |
@@ -270,7 +275,7 @@ Table definitions, minimum permissions, event subscriptions, and callback securi
 | `pnpm typecheck` | Type-check the complete workspace |
 | `pnpm test:unit` | Run unit tests |
 | `pnpm test:integration` | Run tests using PostgreSQL, Redis, and MinIO |
-| `pnpm build` | Build all 16 packages/apps |
+| `pnpm build` | Build all 17 packages/apps |
 | `pnpm readme:check` | Verify bilingual README synchronization and critical commands |
 
 Recommended pre-commit checks:
@@ -291,10 +296,11 @@ apps/
   api/                 Fastify API, health checks, and HTTP routes
   worker/              BullMQ consumers for generation/render/QC/publishing
   remotion/            Compositions, components, Player, and Final Renderer
-  preview/             Read-only review UI
+  preview/             React Creative Studio, storyboard canvas, and Remotion review UI
 packages/
   config/              Zod environment contract
   contracts/           Shared contracts and JSON Schemas
+  creative/            Creative domain model, project import, media materialization
   domain/              State machines, versions, and input hashes
   db/                  Drizzle schema, migrations, seed, repositories
   design-adapter/      Open Design parsing and Design Pack compilation
@@ -318,16 +324,18 @@ docs/                   API, operations, configuration, and verification docs
 - Asset records include source, provider, model, seed, content hash, and license.
 - Cached Jobs reuse the original asset ID. Regeneration creates a new version connected to the previous version through `parentAssetId`.
 - Feishu stores control data and controlled links, not large media files.
-- Preview cannot mutate project state. Approval actions enter only through the Feishu control plane.
+- The Studio can organize creative data and media, but it does not expose approval, release, or provider-switch actions. Those actions enter only through the Feishu control plane.
 
 ## Tests and current completion
 
 Latest complete local regression (2026-07-15):
 
-- lint, typecheck, and build passed across all 16 workspaces;
-- 69 unit tests passed;
-- 32 integration tests passed;
-- a fresh database applied 7 migrations and produced 18 business tables plus 10 demo shots;
+- lint, typecheck, and build passed across all 17 workspaces;
+- 76 unit tests passed;
+- 33 integration tests passed;
+- a fresh database applied 8 migrations and produced 21 business tables plus 10 demo shots;
+- JSON and ZIP project imports passed API smoke tests; ZIP media was written to local MinIO and bound to versioned assets;
+- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including project switching, canvas nodes, shot details, and final review, with no browser console errors or warnings;
 - all 10 Final MP4 files were H.264/AAC at 30 fps;
 - 15 technical QC checks and the Mock VLM decision passed;
 - the publish ZIP passed integrity checks for 14 entries, including eight bilingual promotional videos and twelve experiment seeds.

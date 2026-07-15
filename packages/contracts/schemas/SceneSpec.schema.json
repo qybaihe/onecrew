@@ -1,101 +1,82 @@
 {
-  "$id": "https://onecrew.local/schemas/ProjectSpec.schema.json",
-  "title": "ProjectSpec",
+  "$id": "https://onecrew.local/schemas/SceneSpec.schema.json",
+  "title": "SceneSpec",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "entityId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
     "projectId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
     },
-    "nameZh": {
+    "episodeId": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 200
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
     },
-    "nameEn": {
+    "name": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 200
+      "maxLength": 300
     },
-    "synopsis": {
+    "description": {
       "type": "string",
-      "minLength": 1,
       "maxLength": 10000
     },
-    "audience": {
+    "prompt": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 1000
+      "maxLength": 20000
     },
-    "genres": {
-      "minItems": 1,
+    "polishedPrompt": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "negativePrompt": {
+      "type": "string",
+      "maxLength": 10000
+    },
+    "referenceAssetIds": {
+      "default": [],
       "type": "array",
       "items": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 80
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
       }
     },
-    "ownerOpenId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-    },
-    "locales": {
-      "minItems": 1,
-      "maxItems": 2,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": [
-          "zh-CN",
-          "en-US"
-        ]
-      }
-    },
-    "aspectRatios": {
-      "minItems": 1,
-      "maxItems": 3,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": [
-          "16:9",
-          "9:16",
-          "1:1"
-        ]
-      }
-    },
-    "budgetLimitCny": {
-      "type": "number",
-      "minimum": 0
-    },
-    "designSystemId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
-    },
-    "style": {
-      "type": "string",
-      "maxLength": 500
-    },
-    "tags": {
+    "extraAssetIds": {
+      "default": [],
       "type": "array",
       "items": {
         "type": "string",
         "minLength": 1,
-        "maxLength": 100
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
       }
     },
-    "totalEpisodes": {
+    "sortOrder": {
+      "default": 0,
       "type": "integer",
-      "exclusiveMinimum": 0,
+      "minimum": 0,
       "maximum": 9007199254740991
+    },
+    "status": {
+      "default": "draft",
+      "type": "string",
+      "enum": [
+        "draft",
+        "ready",
+        "archived"
+      ]
     },
     "source": {
       "type": "object",
@@ -135,29 +116,38 @@
       ],
       "additionalProperties": false
     },
-    "status": {
+    "kind": {
       "type": "string",
-      "enum": [
-        "draft",
-        "running",
-        "waiting_human",
-        "done",
-        "failed"
-      ]
+      "const": "scene"
+    },
+    "location": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "timeOfDay": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "atmosphere": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "lightingStyle": {
+      "type": "string",
+      "maxLength": 2000
     }
   },
   "required": [
+    "entityId",
     "projectId",
-    "nameZh",
-    "nameEn",
-    "synopsis",
-    "audience",
-    "genres",
-    "ownerOpenId",
-    "locales",
-    "aspectRatios",
-    "budgetLimitCny",
-    "status"
+    "name",
+    "referenceAssetIds",
+    "extraAssetIds",
+    "sortOrder",
+    "status",
+    "kind",
+    "location"
   ],
   "additionalProperties": false
 }

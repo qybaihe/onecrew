@@ -1,0 +1,1393 @@
+{
+  "$id": "https://onecrew.local/schemas/CreativeProjectBundle.schema.json",
+  "title": "CreativeProjectBundle",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "bundleVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "type": "string",
+          "enum": [
+            "onecrew",
+            "local-mini-drama",
+            "manual",
+            "import"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "importedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "system"
+      ],
+      "additionalProperties": false
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "nameZh": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "nameEn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "synopsis": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "audience": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "genres": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "ownerOpenId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "locales": {
+          "minItems": 1,
+          "maxItems": 2,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "zh-CN",
+              "en-US"
+            ]
+          }
+        },
+        "aspectRatios": {
+          "minItems": 1,
+          "maxItems": 3,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "budgetLimitCny": {
+          "type": "number",
+          "minimum": 0
+        },
+        "designSystemId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "style": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "totalEpisodes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "system": {
+              "type": "string",
+              "enum": [
+                "onecrew",
+                "local-mini-drama",
+                "manual",
+                "import"
+              ]
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "license": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "importedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            }
+          },
+          "required": [
+            "system"
+          ],
+          "additionalProperties": false
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "running",
+            "waiting_human",
+            "done",
+            "failed"
+          ]
+        }
+      },
+      "required": [
+        "projectId",
+        "nameZh",
+        "nameEn",
+        "synopsis",
+        "audience",
+        "genres",
+        "ownerOpenId",
+        "locales",
+        "aspectRatios",
+        "budgetLimitCny",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "episodes": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "episodeId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "episodeNumber": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "scriptContent": {
+            "default": "",
+            "type": "string",
+            "maxLength": 200000
+          },
+          "durationSec": {
+            "default": 0,
+            "type": "number",
+            "minimum": 0,
+            "maximum": 7200
+          },
+          "characterIds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "sceneIds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "propIds": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "status": {
+            "default": "draft",
+            "type": "string",
+            "enum": [
+              "draft",
+              "planning",
+              "ready",
+              "rendered",
+              "archived"
+            ]
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "system": {
+                "type": "string",
+                "enum": [
+                  "onecrew",
+                  "local-mini-drama",
+                  "manual",
+                  "import"
+                ]
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "license": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "importedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              }
+            },
+            "required": [
+              "system"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "episodeId",
+          "projectId",
+          "episodeNumber",
+          "title",
+          "scriptContent",
+          "durationSec",
+          "characterIds",
+          "sceneIds",
+          "propIds",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "entityId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "episodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "prompt": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "polishedPrompt": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "negativePrompt": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "referenceAssetIds": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                }
+              },
+              "extraAssetIds": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                }
+              },
+              "sortOrder": {
+                "default": 0,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "default": "draft",
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "ready",
+                  "archived"
+                ]
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "system": {
+                    "type": "string",
+                    "enum": [
+                      "onecrew",
+                      "local-mini-drama",
+                      "manual",
+                      "import"
+                    ]
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "license": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "importedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  }
+                },
+                "required": [
+                  "system"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "character"
+              },
+              "role": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "personality": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "appearance": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "voiceStyle": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "identityAnchors": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              },
+              "styleTokens": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              },
+              "colorPalette": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "stages": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stageId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "description": {
+                      "type": "string",
+                      "maxLength": 4000
+                    },
+                    "clothing": {
+                      "type": "string",
+                      "maxLength": 2000
+                    },
+                    "referenceAssetIds": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "stageId",
+                    "name",
+                    "referenceAssetIds"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "providerAssetRef": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "entityId",
+              "projectId",
+              "name",
+              "referenceAssetIds",
+              "extraAssetIds",
+              "sortOrder",
+              "status",
+              "kind",
+              "identityAnchors",
+              "styleTokens",
+              "colorPalette",
+              "stages"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "entityId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "episodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "prompt": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "polishedPrompt": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "negativePrompt": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "referenceAssetIds": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                }
+              },
+              "extraAssetIds": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                }
+              },
+              "sortOrder": {
+                "default": 0,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "default": "draft",
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "ready",
+                  "archived"
+                ]
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "system": {
+                    "type": "string",
+                    "enum": [
+                      "onecrew",
+                      "local-mini-drama",
+                      "manual",
+                      "import"
+                    ]
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "license": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "importedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  }
+                },
+                "required": [
+                  "system"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "scene"
+              },
+              "location": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "timeOfDay": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "atmosphere": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "lightingStyle": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "entityId",
+              "projectId",
+              "name",
+              "referenceAssetIds",
+              "extraAssetIds",
+              "sortOrder",
+              "status",
+              "kind",
+              "location"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "entityId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "episodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "prompt": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "polishedPrompt": {
+                "type": "string",
+                "maxLength": 20000
+              },
+              "negativePrompt": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "referenceAssetIds": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                }
+              },
+              "extraAssetIds": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                }
+              },
+              "sortOrder": {
+                "default": 0,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "default": "draft",
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "ready",
+                  "archived"
+                ]
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "system": {
+                    "type": "string",
+                    "enum": [
+                      "onecrew",
+                      "local-mini-drama",
+                      "manual",
+                      "import"
+                    ]
+                  },
+                  "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "license": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "importedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  }
+                },
+                "required": [
+                  "system"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "prop"
+              },
+              "category": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "entityId",
+              "projectId",
+              "name",
+              "referenceAssetIds",
+              "extraAssetIds",
+              "sortOrder",
+              "status",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "shots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "shotId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "sequence": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "durationSec": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 120
+          },
+          "characters": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "sceneId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "episodeId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "propIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "timeOfDay": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "camera": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "dialogueZh": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "narrationZh": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "atmosphere": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "result": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "shotType": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "cameraAngle": {
+            "type": "object",
+            "properties": {
+              "horizontal": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "vertical": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "side": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "additionalProperties": false
+          },
+          "movement": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "lightingStyle": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "depthOfField": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "imagePrompt": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "polishedPrompt": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "videoPrompt": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "negativePrompt": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "referenceAssetIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "framePromptIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          },
+          "firstFrameAssetId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "lastFrameAssetId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "emotion": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "emotionIntensity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "segmentIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "segmentTitle": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "continuity": {
+            "type": "object",
+            "properties": {
+              "sourceShotId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+              },
+              "characters": {
+                "default": {},
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "position": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "clothing": {
+                      "type": "string",
+                      "maxLength": 1000
+                    },
+                    "expression": {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    "props": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "props"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "lighting": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "cameraAxis": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "notes": {
+                "type": "string",
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "characters"
+            ],
+            "additionalProperties": false
+          },
+          "creationMode": {
+            "type": "string",
+            "enum": [
+              "classic",
+              "universal"
+            ]
+          },
+          "universalSegmentText": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "layoutDescription": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "system": {
+                "type": "string",
+                "enum": [
+                  "onecrew",
+                  "local-mini-drama",
+                  "manual",
+                  "import"
+                ]
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "license": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "importedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              }
+            },
+            "required": [
+              "system"
+            ],
+            "additionalProperties": false
+          },
+          "importance": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "hero"
+            ]
+          },
+          "closeupDialogue": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned",
+              "generating",
+              "qc",
+              "approved",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "shotId",
+          "projectId",
+          "sequence",
+          "durationSec",
+          "characters",
+          "sceneId",
+          "action",
+          "camera",
+          "prompt",
+          "referenceAssetIds",
+          "importance",
+          "closeupDialogue",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "framePrompts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "framePromptId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "shotId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "frameType": {
+            "type": "string",
+            "enum": [
+              "first",
+              "last",
+              "key"
+            ]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "layout": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "boundAssetId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "system": {
+                "type": "string",
+                "enum": [
+                  "onecrew",
+                  "local-mini-drama",
+                  "manual",
+                  "import"
+                ]
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "license": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "importedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              }
+            },
+            "required": [
+              "system"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "framePromptId",
+          "shotId",
+          "frameType",
+          "prompt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "mediaFiles": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sourcePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ]
+          },
+          "ownerType": {
+            "type": "string",
+            "enum": [
+              "entity",
+              "shot",
+              "frame"
+            ]
+          },
+          "ownerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "originalId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sourcePath",
+          "mediaType",
+          "ownerType",
+          "ownerId",
+          "role"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "bundleVersion",
+    "source",
+    "project",
+    "episodes",
+    "entities",
+    "shots",
+    "framePrompts",
+    "mediaFiles"
+  ],
+  "additionalProperties": false
+}

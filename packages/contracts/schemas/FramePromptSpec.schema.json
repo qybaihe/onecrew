@@ -1,0 +1,92 @@
+{
+  "$id": "https://onecrew.local/schemas/FramePromptSpec.schema.json",
+  "title": "FramePromptSpec",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "framePromptId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "shotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "frameType": {
+      "type": "string",
+      "enum": [
+        "first",
+        "last",
+        "key"
+      ]
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "layout": {
+      "type": "string",
+      "maxLength": 10000
+    },
+    "boundAssetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "type": "string",
+          "enum": [
+            "onecrew",
+            "local-mini-drama",
+            "manual",
+            "import"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "importedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "system"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "framePromptId",
+    "shotId",
+    "frameType",
+    "prompt"
+  ],
+  "additionalProperties": false
+}

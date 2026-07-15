@@ -1,6 +1,6 @@
 # OneCrew API
 
-本页只列当前已实现并测试的阶段 0～8 API，不以占位成功响应冒充完成。
+本页只列当前已实现并测试的阶段 0～8 与创作领域 API，不以占位成功响应冒充完成。
 
 本地基址：`http://127.0.0.1:3000`。
 
@@ -12,6 +12,41 @@ GET /readyz
 ```
 
 `healthz` 只表示进程存活。`readyz` 实际探测 PostgreSQL、Redis 和 S3/MinIO；任一依赖不可用返回 503。
+
+## 创作项目与工程导入
+
+```text
+GET  /v1/creative/projects
+GET  /v1/creative/projects/:projectId
+POST /v1/creative/imports/local-mini-drama/json
+POST /v1/creative/imports/local-mini-drama/zip
+```
+
+列表接口返回已包含剧集的创作项目。项目详情返回完整 `CreativeProjectBundle` 和该项目的版本化 `AssetRecord`，包括剧集、角色、场景、道具、分镜、首尾帧提示词、连续性快照和媒体绑定。
+
+JSON 导入用于迁移结构化工程数据：
+
+```bash
+curl --request POST http://127.0.0.1:3000/v1/creative/imports/local-mini-drama/json \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "projectId": "prj_import_demo",
+    "ownerOpenId": "ou_local_operator",
+    "nameEn": "Imported Demo",
+    "project": { "format_version": "1.4", "drama": { "title": "导入示例" } }
+  }'
+```
+
+ZIP 导入接收 `application/zip` 原始请求体，工程选项通过 query 参数传入：
+
+```bash
+curl --request POST \
+  'http://127.0.0.1:3000/v1/creative/imports/local-mini-drama/zip?projectId=prj_zip_demo&ownerOpenId=ou_local_operator' \
+  --header 'Content-Type: application/zip' \
+  --data-binary '@project.zip'
+```
+
+ZIP 根目录必须包含 `project.json`。导入器限制条目数量、单文件大小和总解压大小，拒绝绝对路径、路径穿越与缺失的声明媒体；校验通过后，业务数据在一个 PostgreSQL 事务中写入，媒体进入受控 S3/MinIO，并生成含来源、哈希、许可证和绑定关系的 `AssetRecord`。项目 ID 冲突返回 409，不会覆盖已有项目。
 
 ## Provider 异步任务
 

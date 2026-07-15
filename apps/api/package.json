@@ -16,6 +16,7 @@
   "dependencies": {
     "@onecrew/config": "workspace:*",
     "@onecrew/contracts": "workspace:*",
+    "@onecrew/creative": "workspace:*",
     "@onecrew/db": "workspace:*",
     "@onecrew/domain": "workspace:*",
     "@onecrew/feishu": "workspace:*",

@@ -1,5 +1,8 @@
 import type {
   AssetRecord,
+  CreativeEntity,
+  EpisodeSpec,
+  FramePromptSpec,
   JobRecord,
   ProjectSpec,
   QCRecord,
@@ -96,6 +99,16 @@ export const humanGateStatusEnum = pgEnum('human_gate_status', [
   'cancelled',
 ]);
 export const auditOutcomeEnum = pgEnum('audit_outcome', ['accepted', 'rejected', 'failed']);
+export const episodeStatusEnum = pgEnum('episode_status', [
+  'draft',
+  'planning',
+  'ready',
+  'rendered',
+  'archived',
+]);
+export const creativeEntityKindEnum = pgEnum('creative_entity_kind', ['character', 'scene', 'prop']);
+export const creativeEntityStatusEnum = pgEnum('creative_entity_status', ['draft', 'ready', 'archived']);
+export const frameTypeEnum = pgEnum('frame_type', ['first', 'last', 'key']);
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -112,6 +125,46 @@ export const projects = pgTable(
     ...timestamps,
   },
   (table) => [index('projects_status_idx').on(table.status)],
+);
+
+export const episodes = pgTable(
+  'episodes',
+  {
+    episodeId: text('episode_id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    episodeNumber: integer('episode_number').notNull(),
+    spec: jsonb('spec').$type<EpisodeSpec>().notNull(),
+    status: episodeStatusEnum('status').notNull(),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('episodes_project_number_uidx').on(table.projectId, table.episodeNumber),
+    index('episodes_project_status_idx').on(table.projectId, table.status),
+  ],
+);
+
+export const creativeEntities = pgTable(
+  'creative_entities',
+  {
+    entityId: text('entity_id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    episodeId: text('episode_id').references(() => episodes.episodeId, { onDelete: 'set null' }),
+    kind: creativeEntityKindEnum('kind').notNull(),
+    name: text('name').notNull(),
+    spec: jsonb('spec').$type<CreativeEntity>().notNull(),
+    status: creativeEntityStatusEnum('status').notNull(),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [
+    index('creative_entities_project_kind_idx').on(table.projectId, table.kind),
+    index('creative_entities_episode_idx').on(table.episodeId),
+  ],
 );
 
 export const shots = pgTable(
@@ -131,6 +184,21 @@ export const shots = pgTable(
     uniqueIndex('shots_project_sequence_uidx').on(table.projectId, table.sequence),
     index('shots_project_status_idx').on(table.projectId, table.status),
   ],
+);
+
+export const framePrompts = pgTable(
+  'frame_prompts',
+  {
+    framePromptId: text('frame_prompt_id').primaryKey(),
+    shotId: text('shot_id')
+      .notNull()
+      .references(() => shots.shotId, { onDelete: 'cascade' }),
+    frameType: frameTypeEnum('frame_type').notNull(),
+    spec: jsonb('spec').$type<FramePromptSpec>().notNull(),
+    version: integer('version').notNull().default(1),
+    ...timestamps,
+  },
+  (table) => [index('frame_prompts_shot_type_idx').on(table.shotId, table.frameType)],
 );
 
 export const assets = pgTable(

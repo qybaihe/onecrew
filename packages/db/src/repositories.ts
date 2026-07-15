@@ -1,6 +1,10 @@
 import {
   assetRecordSchema,
+  creativeEntitySchema,
+  creativeProjectBundleSchema,
+  episodeSpecSchema,
   feishuCardActionSchema,
+  framePromptSpecSchema,
   humanGateSchema,
   experimentRecordSchema,
   jobRecordSchema,
@@ -16,7 +20,11 @@ import {
   shotSpecSchema,
   type AssetRecord,
   type AssetStatus,
+  type CreativeEntity,
+  type CreativeProjectBundle,
+  type EpisodeSpec,
   type FeishuCardAction,
+  type FramePromptSpec,
   type HumanGate,
   type ExperimentRecord,
   type JobRecord,
@@ -45,14 +53,17 @@ import {
   createInputHash,
   VersionConflictError,
 } from '@onecrew/domain';
-import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import type { OneCrewDatabase } from './client.js';
 import {
   assets,
   auditLogs,
+  creativeEntities,
+  episodes,
   experiments,
   feishuRecordLinks,
+  framePrompts,
   humanGates,
   idempotencyKeys,
   jobs,
@@ -175,6 +186,196 @@ export class ProjectRepository {
       .returning();
     if (!row) return throwVersionConflict(this.db, 'project', projectId, expectedVersion);
     return { value: projectSpecSchema.parse(row.spec), version: row.version };
+  }
+}
+
+export interface CreativeBundleImportResult {
+  projectId: string;
+  episodes: number;
+  entities: number;
+  shots: number;
+  framePrompts: number;
+  assets: number;
+}
+
+export class CreativeRepository {
+  constructor(private readonly db: OneCrewDatabase) {}
+
+  async importBundle(
+    input: CreativeProjectBundle,
+    assetsToCreate: AssetRecord[] = [],
+  ): Promise<CreativeBundleImportResult> {
+    const bundle = creativeProjectBundleSchema.parse(input);
+    const importedAssets = assetsToCreate.map((asset) => assetRecordSchema.parse(asset));
+    await this.db.transaction(async (tx) => {
+      await tx.insert(projects).values({
+        projectId: bundle.project.projectId,
+        spec: bundle.project,
+        status: bundle.project.status,
+      });
+      if (bundle.episodes.length > 0) {
+        await tx.insert(episodes).values(
+          bundle.episodes.map((episode) => ({
+            episodeId: episode.episodeId,
+            projectId: episode.projectId,
+            episodeNumber: episode.episodeNumber,
+            spec: episode,
+            status: episode.status,
+          })),
+        );
+      }
+      if (bundle.entities.length > 0) {
+        await tx.insert(creativeEntities).values(
+          bundle.entities.map((entity) => ({
+            entityId: entity.entityId,
+            projectId: entity.projectId,
+            episodeId: entity.episodeId,
+            kind: entity.kind,
+            name: entity.name,
+            spec: entity,
+            status: entity.status,
+          })),
+        );
+      }
+      if (bundle.shots.length > 0) {
+        await tx.insert(shots).values(
+          bundle.shots.map((shot) => ({
+            shotId: shot.shotId,
+            projectId: shot.projectId,
+            sequence: shot.sequence,
+            spec: shot,
+            status: shot.status,
+          })),
+        );
+      }
+      if (bundle.framePrompts.length > 0) {
+        await tx.insert(framePrompts).values(
+          bundle.framePrompts.map((framePrompt) => ({
+            framePromptId: framePrompt.framePromptId,
+            shotId: framePrompt.shotId,
+            frameType: framePrompt.frameType,
+            spec: framePrompt,
+          })),
+        );
+      }
+      if (importedAssets.length > 0) {
+        await tx.insert(assets).values(
+          importedAssets.map((record) => ({
+            assetId: record.assetId,
+            projectId: record.projectId,
+            shotId: record.shotId,
+            parentAssetId: record.parentAssetId,
+            type: record.type,
+            assetVersion: record.version,
+            record,
+            status: record.status,
+            contentHash: record.contentHash,
+          })),
+        );
+      }
+    });
+    return {
+      projectId: bundle.project.projectId,
+      episodes: bundle.episodes.length,
+      entities: bundle.entities.length,
+      shots: bundle.shots.length,
+      framePrompts: bundle.framePrompts.length,
+      assets: importedAssets.length,
+    };
+  }
+
+  async getBundle(projectId: string): Promise<CreativeProjectBundle> {
+    const [projectRow] = await this.db.select().from(projects).where(eq(projects.projectId, projectId));
+    if (!projectRow) throw new RecordNotFoundError('project', projectId);
+    const [episodeRows, entityRows, shotRows] = await Promise.all([
+      this.db.select().from(episodes).where(eq(episodes.projectId, projectId)).orderBy(asc(episodes.episodeNumber)),
+      this.db.select().from(creativeEntities).where(eq(creativeEntities.projectId, projectId)).orderBy(asc(creativeEntities.name)),
+      this.db.select().from(shots).where(eq(shots.projectId, projectId)).orderBy(asc(shots.sequence)),
+    ]);
+    const shotIds = shotRows.map((row) => row.shotId);
+    const frameRows = shotIds.length > 0
+      ? await this.db.select().from(framePrompts).where(inArray(framePrompts.shotId, shotIds)).orderBy(asc(framePrompts.createdAt))
+      : [];
+    const project = projectSpecSchema.parse(projectRow.spec);
+    return creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0',
+      source: project.source ?? { system: 'onecrew' },
+      project,
+      episodes: episodeRows.map((row) => episodeSpecSchema.parse(row.spec)),
+      entities: entityRows.map((row) => creativeEntitySchema.parse(row.spec)),
+      shots: shotRows.map((row) => shotSpecSchema.parse(row.spec)),
+      framePrompts: frameRows.map((row) => framePromptSpecSchema.parse(row.spec)),
+      mediaFiles: [],
+    });
+  }
+
+  async listProjects(): Promise<ProjectSpec[]> {
+    const episodeProjects = await this.db.selectDistinct({ projectId: episodes.projectId }).from(episodes);
+    if (episodeProjects.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(projects)
+      .where(inArray(projects.projectId, episodeProjects.map((row) => row.projectId)))
+      .orderBy(desc(projects.updatedAt));
+    return rows.map((row) => projectSpecSchema.parse(row.spec));
+  }
+
+  async listAssets(projectId: string): Promise<AssetRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(assets)
+      .where(eq(assets.projectId, projectId))
+      .orderBy(desc(assets.createdAt));
+    return rows.map((row) => assetRecordSchema.parse(row.record));
+  }
+
+  async createEpisode(input: EpisodeSpec): Promise<Versioned<EpisodeSpec>> {
+    const spec = episodeSpecSchema.parse(input);
+    const [row] = await this.db
+      .insert(episodes)
+      .values({
+        episodeId: spec.episodeId,
+        projectId: spec.projectId,
+        episodeNumber: spec.episodeNumber,
+        spec,
+        status: spec.status,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created episode');
+    return { value: episodeSpecSchema.parse(row.spec), version: row.version };
+  }
+
+  async createEntity(input: CreativeEntity): Promise<Versioned<CreativeEntity>> {
+    const spec = creativeEntitySchema.parse(input);
+    const [row] = await this.db
+      .insert(creativeEntities)
+      .values({
+        entityId: spec.entityId,
+        projectId: spec.projectId,
+        episodeId: spec.episodeId,
+        kind: spec.kind,
+        name: spec.name,
+        spec,
+        status: spec.status,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created creative entity');
+    return { value: creativeEntitySchema.parse(row.spec), version: row.version };
+  }
+
+  async createFramePrompt(input: FramePromptSpec): Promise<Versioned<FramePromptSpec>> {
+    const spec = framePromptSpecSchema.parse(input);
+    const [row] = await this.db
+      .insert(framePrompts)
+      .values({
+        framePromptId: spec.framePromptId,
+        shotId: spec.shotId,
+        frameType: spec.frameType,
+        spec,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created frame prompt');
+    return { value: framePromptSpecSchema.parse(row.spec), version: row.version };
   }
 }
 
@@ -1386,6 +1587,7 @@ export class ProviderCallbackRepository {
 export function createRepositories(db: OneCrewDatabase) {
   return {
     projects: new ProjectRepository(db),
+    creative: new CreativeRepository(db),
     shots: new ShotRepository(db),
     assets: new AssetRepository(db),
     jobs: new JobRepository(db),

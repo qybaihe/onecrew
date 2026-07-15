@@ -41,6 +41,37 @@
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
     },
+    "episodeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "propIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 10000
+    },
+    "location": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "timeOfDay": {
+      "type": "string",
+      "maxLength": 200
+    },
     "action": {
       "type": "string",
       "minLength": 1,
@@ -55,10 +86,68 @@
       "type": "string",
       "maxLength": 5000
     },
+    "narrationZh": {
+      "type": "string",
+      "maxLength": 5000
+    },
+    "atmosphere": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "result": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "shotType": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "cameraAngle": {
+      "type": "object",
+      "properties": {
+        "horizontal": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "vertical": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "side": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "movement": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "lightingStyle": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "depthOfField": {
+      "type": "string",
+      "maxLength": 500
+    },
     "prompt": {
       "type": "string",
       "minLength": 1,
       "maxLength": 10000
+    },
+    "imagePrompt": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "polishedPrompt": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "videoPrompt": {
+      "type": "string",
+      "maxLength": 20000
     },
     "negativePrompt": {
       "type": "string",
@@ -72,6 +161,166 @@
         "maxLength": 128,
         "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
       }
+    },
+    "framePromptIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "firstFrameAssetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "lastFrameAssetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "emotion": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "emotionIntensity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "segmentIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "segmentTitle": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "continuity": {
+      "type": "object",
+      "properties": {
+        "sourceShotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        },
+        "characters": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "clothing": {
+                "type": "string",
+                "maxLength": 1000
+              },
+              "expression": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "props": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+                }
+              }
+            },
+            "required": [
+              "props"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "lighting": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "cameraAxis": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "characters"
+      ],
+      "additionalProperties": false
+    },
+    "creationMode": {
+      "type": "string",
+      "enum": [
+        "classic",
+        "universal"
+      ]
+    },
+    "universalSegmentText": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "layoutDescription": {
+      "type": "string",
+      "maxLength": 10000
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "type": "string",
+          "enum": [
+            "onecrew",
+            "local-mini-drama",
+            "manual",
+            "import"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "importedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "system"
+      ],
+      "additionalProperties": false
     },
     "importance": {
       "type": "string",

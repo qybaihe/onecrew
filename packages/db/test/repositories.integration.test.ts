@@ -1,5 +1,5 @@
 import { loadEnv } from '@onecrew/config';
-import { projectSpecSchema } from '@onecrew/contracts';
+import { creativeProjectBundleSchema, projectSpecSchema } from '@onecrew/contracts';
 import { createInputHash, InvalidStateTransitionError, VersionConflictError } from '@onecrew/domain';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -19,6 +19,125 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL repositories', () => {
+  it('imports and reads back a complete creative bundle transactionally', async () => {
+    const now = new Date().toISOString();
+    const projectId = `prj_creative_${suffix}`;
+    const episodeId = `episode_creative_${suffix}`;
+    const characterId = `character_creative_${suffix}`;
+    const sceneId = `scene_creative_${suffix}`;
+    const shotId = `shot_creative_${suffix}`;
+    const framePromptId = `frame_creative_${suffix}`;
+    const bundle = creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0',
+      source: { system: 'local-mini-drama', version: '1.4', license: 'MIT', importedAt: now },
+      project: {
+        projectId,
+        nameZh: '创作工程导入测试',
+        nameEn: 'Creative Import Test',
+        synopsis: '验证剧集、素材实体、结构化分镜和帧提示词事务导入。',
+        audience: '开发测试',
+        genres: ['test'],
+        ownerOpenId: 'ou_test_owner',
+        locales: ['zh-CN', 'en-US'],
+        aspectRatios: ['16:9'],
+        budgetLimitCny: 0,
+        totalEpisodes: 1,
+        source: { system: 'local-mini-drama', version: '1.4', license: 'MIT', importedAt: now },
+        status: 'draft',
+      },
+      episodes: [{
+        episodeId,
+        projectId,
+        episodeNumber: 1,
+        title: '第一集',
+        scriptContent: '角色进入星门。',
+        durationSec: 6,
+        characterIds: [characterId],
+        sceneIds: [sceneId],
+        propIds: [],
+        status: 'draft',
+      }],
+      entities: [
+        {
+          entityId: characterId,
+          projectId,
+          kind: 'character',
+          name: '测试角色',
+          identityAnchors: ['银白短发'],
+          styleTokens: [],
+          colorPalette: [],
+          stages: [],
+          referenceAssetIds: [],
+          extraAssetIds: [],
+          sortOrder: 0,
+          status: 'draft',
+        },
+        {
+          entityId: sceneId,
+          projectId,
+          episodeId,
+          kind: 'scene',
+          name: '星门',
+          location: '星门',
+          referenceAssetIds: [],
+          extraAssetIds: [],
+          sortOrder: 0,
+          status: 'draft',
+        },
+      ],
+      shots: [{
+        shotId,
+        projectId,
+        episodeId,
+        sequence: 1,
+        durationSec: 6,
+        characters: [characterId],
+        sceneId,
+        propIds: [],
+        action: '角色进入星门。',
+        camera: '缓慢推进',
+        prompt: 'cinematic stargate',
+        referenceAssetIds: [],
+        framePromptIds: [framePromptId],
+        creationMode: 'classic',
+        importance: 'hero',
+        closeupDialogue: false,
+        status: 'planned',
+      }],
+      framePrompts: [{
+        framePromptId,
+        shotId,
+        frameType: 'first',
+        prompt: '星门前的首帧',
+      }],
+      mediaFiles: [],
+    });
+    const assetId = `asset_creative_${suffix}`;
+    const imported = await repositories.creative.importBundle(bundle, [{
+      assetId,
+      projectId,
+      shotId,
+      type: 'image',
+      version: 1,
+      uri: `https://assets.onecrew.local/${assetId}.png`,
+      provider: 'import',
+      model: 'local-mini-drama-project-1.4',
+      source: 'integration fixture',
+      license: 'MIT',
+      contentHash: createInputHash({ assetId }),
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+    }]);
+
+    expect(imported).toMatchObject({ projectId, episodes: 1, entities: 2, shots: 1, framePrompts: 1, assets: 1 });
+    const restored = await repositories.creative.getBundle(projectId);
+    expect(restored.episodes[0]).toMatchObject({ episodeId, title: '第一集' });
+    expect(restored.entities.map((entity) => entity.kind).sort()).toEqual(['character', 'scene']);
+    expect(restored.shots[0]).toMatchObject({ shotId, episodeId, sceneId });
+    expect(restored.framePrompts[0]).toMatchObject({ framePromptId, frameType: 'first' });
+  });
+
   it('persists a project and enforces legal, optimistic transitions', async () => {
     const projectId = `prj_repo_${suffix}`;
     const project = projectSpecSchema.parse({

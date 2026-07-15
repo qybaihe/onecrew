@@ -50,6 +50,13 @@
       "when": 1784122222558,
       "tag": "0006_salty_wilson_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784128462573,
+      "tag": "0007_parched_kang",
+      "breakpoints": true
     }
   ]
 }
