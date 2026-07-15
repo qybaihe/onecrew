@@ -1,9 +1,11 @@
 import {
   assetRecordSchema,
   type CreativeProjectBundle,
+  type CreativeStoryPlanRequest,
   type ProviderRequest,
   type QcRunRequest,
   creativeGenerationBatchSchema,
+  creativeStoryPlanSchema,
   episodeSpecSchema,
   sceneSpecSchema,
   shotSpecSchema,
@@ -176,6 +178,17 @@ describe('creative routes', () => {
     let currentShot = shot;
     let generationRequest: ProviderRequest | undefined;
     let continuityQcRequest: QcRunRequest | undefined;
+    let storyPlanRequest: CreativeStoryPlanRequest | undefined;
+    const storyPlan = creativeStoryPlanSchema.parse({
+      title: '星门续章', logline: '导航员抵达星门。',
+      episodes: [{
+        title: '第二集', synopsis: '坐标出现。', scriptContent: '云岚：坐标出现了。', durationSec: 60,
+        characterNames: ['云岚'], sceneNames: ['星门回廊'], propNames: [],
+      }],
+      characters: [{ name: '云岚', role: '导航员', personality: '敏锐', appearance: '短发', voiceStyle: '清晰', identityAnchors: ['短发'] }],
+      scenes: [{ name: '星门回廊', description: '回廊', location: '星门', timeOfDay: '夜', atmosphere: '神秘', lightingStyle: '青蓝' }],
+      props: [],
+    });
     const qcAsset = assetRecordSchema.parse({
       assetId: 'asset_api_qc',
       projectId,
@@ -332,6 +345,54 @@ describe('creative routes', () => {
             };
           },
         },
+        storyPlanner: {
+          async submit(id, request) {
+            if (id !== projectId) throw new Error('wrong project');
+            storyPlanRequest = request;
+            return {
+              jobId: 'job_api_story_plan',
+              status: 'queued',
+              mode: 'mock',
+              provider: 'mock-llm-primary',
+              route: 'primary',
+              estimatedCostCny: 0.01,
+              statusUrl: '/v1/jobs/job_api_story_plan',
+              replayed: false,
+            };
+          },
+          async preview(id, jobId) {
+            if (id !== projectId || jobId !== 'job_api_story_plan') throw new Error('wrong story plan');
+            return {
+              job: {
+                jobId,
+                projectId,
+                capability: 'plan',
+                provider: 'mock-llm-primary',
+                model: 'deterministic-v1',
+                mode: 'mock',
+                status: 'succeeded',
+                attempt: 1,
+                inputHash: '7'.repeat(64),
+                outputAssetIds: [],
+                createdAt: now,
+                updatedAt: now,
+              },
+              plan: storyPlan,
+            };
+          },
+          async apply(id, jobId, expectedProjectVersion, actorOpenId) {
+            if (id !== projectId || jobId !== 'job_api_story_plan') throw new Error('wrong story plan');
+            if (expectedProjectVersion !== 1 || actorOpenId !== 'ou_studio') throw new Error('wrong apply input');
+            return {
+              projectId,
+              jobId,
+              projectVersion: 2,
+              replayed: false,
+              episodeIds: ['episode_api_story'],
+              entityIds: ['character_api_story', 'scene_api_story'],
+            };
+          },
+        },
       },
     });
 
@@ -363,6 +424,48 @@ describe('creative routes', () => {
     });
     expect(entityResponse.statusCode).toBe(200);
     expect(entityResponse.json()).toMatchObject({ record: { name: '远古星门', location: '星海边界' }, version: 2 });
+
+    const missingStoryPlanKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/story-plans`,
+      payload: { brief: '追加一集星门故事。', episodeCount: 1, generationNonce: 1 },
+    });
+    expect(missingStoryPlanKey.statusCode).toBe(400);
+
+    const storyPlanSubmission = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/story-plans`,
+      headers: { 'idempotency-key': 'creative_story_plan_1' },
+      payload: { brief: '追加一集星门故事。', episodeCount: 1, generationNonce: 1 },
+    });
+    expect(storyPlanSubmission.statusCode).toBe(202);
+    expect(storyPlanSubmission.json()).toMatchObject({
+      job_id: 'job_api_story_plan',
+      status: 'queued',
+      provider: 'mock-llm-primary',
+    });
+    expect(storyPlanRequest).toMatchObject({ brief: '追加一集星门故事。', episodeCount: 1 });
+
+    const storyPlanPreview = await app.inject({
+      method: 'GET',
+      url: `/v1/creative/projects/${projectId}/story-plans/job_api_story_plan`,
+    });
+    expect(storyPlanPreview.statusCode).toBe(200);
+    expect(storyPlanPreview.json()).toMatchObject({
+      job: { status: 'succeeded' },
+      plan: { title: '星门续章', episodes: [{ title: '第二集' }] },
+    });
+
+    const storyPlanApply = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/story-plans/job_api_story_plan/apply`,
+      payload: { expectedProjectVersion: 1, actorOpenId: 'ou_studio' },
+    });
+    expect(storyPlanApply.statusCode).toBe(200);
+    expect(storyPlanApply.json()).toMatchObject({
+      ok: true,
+      applied: { projectVersion: 2, episodeIds: ['episode_api_story'] },
+    });
 
     const missingGenerationKey = await app.inject({
       method: 'POST',

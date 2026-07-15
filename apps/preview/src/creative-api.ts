@@ -3,6 +3,8 @@ import type {
   CreativeEntity,
   CreativeGenerationBatch,
   CreativeProjectBundle,
+  CreativeStoryPlan,
+  CreativeStoryPlanApplyResult,
   EpisodeSpec,
   JobRecord,
   ProjectSpec,
@@ -56,6 +58,18 @@ export interface CreativeGenerationAccepted {
   status_url: string;
   replayed: boolean;
   warning?: string;
+}
+
+export type CreativeStoryPlanAccepted = CreativeGenerationAccepted;
+
+export interface CreativeStoryPlanPreview {
+  job: JobRecord;
+  plan?: CreativeStoryPlan;
+}
+
+export interface CreativeStoryPlanApplyResponse {
+  ok: true;
+  applied: CreativeStoryPlanApplyResult;
 }
 
 export interface CreativeGenerationBatchResponse {
@@ -163,6 +177,48 @@ export async function listCreativeProjects(): Promise<ProjectSpec[]> {
 export async function getCreativeProject(projectId: string): Promise<CreativeProjectResponse> {
   const response = await request(`/v1/creative/projects/${encodeURIComponent(projectId)}`);
   return json<CreativeProjectResponse>(response);
+}
+
+export async function submitCreativeStoryPlan(
+  projectId: string,
+  brief: string,
+  episodeCount: number,
+): Promise<CreativeStoryPlanAccepted> {
+  const response = await request(`/v1/creative/projects/${encodeURIComponent(projectId)}/story-plans`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': `studio_story_plan_${crypto.randomUUID()}`,
+    },
+    body: JSON.stringify({ brief, episodeCount, route: 'primary', generationNonce: Date.now() }),
+  });
+  return json<CreativeStoryPlanAccepted>(response);
+}
+
+export async function getCreativeStoryPlan(
+  projectId: string,
+  jobId: string,
+): Promise<CreativeStoryPlanPreview> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/story-plans/${encodeURIComponent(jobId)}`,
+  );
+  return json<CreativeStoryPlanPreview>(response);
+}
+
+export async function applyCreativeStoryPlan(
+  projectId: string,
+  jobId: string,
+  expectedProjectVersion: number,
+): Promise<CreativeStoryPlanApplyResponse> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/story-plans/${encodeURIComponent(jobId)}/apply`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ expectedProjectVersion, actorOpenId: 'ou_local_studio' }),
+    },
+  );
+  return json<CreativeStoryPlanApplyResponse>(response);
 }
 
 export async function importCreativeArchive(file: File): Promise<CreativeImportResponse> {

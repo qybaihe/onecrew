@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type {
   CreativeEntity,
   CreativeGenerationBatch,
+  CreativeStoryPlan,
   EpisodeSpec,
   JobStatus,
   ProjectSpec,
@@ -21,6 +22,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import {
+  applyCreativeStoryPlan,
   cancelCreativeGenerationBatch,
   downloadCreativeProject,
   getCreativeGenerationBatch,
@@ -28,12 +30,14 @@ import {
   getLatestCreativeGenerationBatch,
   getCreativeProject,
   getCreativeQcRun,
+  getCreativeStoryPlan,
   importCreativeArchive,
   listCreativeProjects,
   retryCreativeGenerationBatch,
   submitCreativeGenerationBatch,
   submitCreativeContinuityQc,
   submitCreativeShotGeneration,
+  submitCreativeStoryPlan,
   updateCreativeEntity,
   updateCreativeEpisode,
   updateCreativeShot,
@@ -46,6 +50,7 @@ type SaveState = 'idle' | 'saving' | 'saved';
 type GenerationKind = 'image' | 'video';
 type GenerationStatus = 'idle' | 'submitting' | JobStatus;
 type ContinuityQcStatus = 'idle' | 'submitting' | QcRunRecord['status'];
+type StoryPlanStatus = 'idle' | 'submitting' | 'applying' | 'applied' | JobStatus;
 
 interface GenerationState {
   status: GenerationStatus;
@@ -64,6 +69,15 @@ interface ContinuityQcState {
   decision?: QcRunRecord['decision'];
   reason?: string;
   reviewDelivery?: QcRunRecord['reviewDelivery'];
+}
+
+interface StoryPlanState {
+  status: StoryPlanStatus;
+  jobId?: string;
+  mode?: ProviderMode;
+  provider?: string;
+  plan?: CreativeStoryPlan;
+  projectVersion?: number;
 }
 
 interface EpisodeDraft {
@@ -206,6 +220,19 @@ const batchStatusLabels: Record<CreativeGenerationBatch['status'], string> = {
   cancelled: '已停止',
 };
 
+const storyPlanStatusLabels: Record<StoryPlanStatus, string> = {
+  idle: '等待创作简报',
+  submitting: '正在提交规划',
+  queued: '已进入生成队列',
+  running: '正在构建故事与设定',
+  waiting_human: '等待飞书预算审批',
+  succeeded: '规划已生成，等待写入',
+  failed: '规划生成失败',
+  cancelled: '规划已取消',
+  applying: '正在写入可编辑工程',
+  applied: '已追加到工程',
+};
+
 function flowGraph(shots: ShotSpec[], selectedShotId: string | undefined): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = shots.map((shot, index) => ({
     id: shot.shotId,
@@ -254,6 +281,9 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [continuityQc, setContinuityQc] = useState<ContinuityQcState>({ status: 'idle' });
   const [generationBatch, setGenerationBatch] = useState<CreativeGenerationBatch>();
   const [batchAction, setBatchAction] = useState<'idle' | 'submitting' | 'polling' | 'stopping' | 'retrying'>('idle');
+  const [storyBrief, setStoryBrief] = useState('');
+  const [storyEpisodeCount, setStoryEpisodeCount] = useState(3);
+  const [storyPlan, setStoryPlan] = useState<StoryPlanState>({ status: 'idle' });
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
   const generationSelectionRef = useRef('');
@@ -276,6 +306,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     projectSelectionRef.current = selectedProjectId ?? '';
     setGenerationBatch(undefined);
     setBatchAction('idle');
+    setStoryPlan({ status: 'idle' });
     if (!selectedProjectId) {
       setProject(undefined);
       setLoading(false);
@@ -286,6 +317,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     void getCreativeProject(selectedProjectId)
       .then((result) => {
         setProject(result);
+        setStoryBrief(result.bundle.project.synopsis);
         setSelectedEpisodeId(result.bundle.episodes[0]?.episodeId);
         setSelectedShotId(result.bundle.shots[0]?.shotId);
         setSelectedEntityId(result.bundle.entities[0]?.entityId);
@@ -367,6 +399,100 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setExporting(false);
+    }
+  };
+
+  const followStoryPlan = async (projectId: string, jobId: string) => {
+    const stillSelected = () => projectSelectionRef.current === projectId;
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      const current = await getCreativeStoryPlan(projectId, jobId);
+      if (!stillSelected()) return;
+      setStoryPlan({
+        status: current.job.status,
+        jobId: current.job.jobId,
+        mode: current.job.mode,
+        provider: current.job.provider,
+        ...(current.plan ? { plan: current.plan } : {}),
+      });
+      if (current.job.status === 'succeeded' || current.job.status === 'waiting_human') return;
+      if (current.job.status === 'failed' || current.job.status === 'cancelled') {
+        throw new Error(current.job.errorMessage ?? storyPlanStatusLabels[current.job.status]);
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 750));
+      if (!stillSelected()) return;
+    }
+    throw new Error('故事规划仍在运行，可稍后刷新状态。');
+  };
+
+  const handleStoryPlanSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedProjectId || !storyBrief.trim()) return;
+    const projectId = selectedProjectId;
+    const stillSelected = () => projectSelectionRef.current === projectId;
+    setError(undefined);
+    setStoryPlan({ status: 'submitting' });
+    try {
+      const accepted = await submitCreativeStoryPlan(projectId, storyBrief.trim(), storyEpisodeCount);
+      if (!stillSelected()) return;
+      setStoryPlan({
+        status: accepted.status,
+        jobId: accepted.job_id,
+        mode: accepted.mode,
+        provider: accepted.provider,
+      });
+      if (accepted.status !== 'waiting_human') await followStoryPlan(projectId, accepted.job_id);
+    } catch (reason) {
+      if (!stillSelected()) return;
+      setStoryPlan((current) => ({ ...current, status: 'failed' }));
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleStoryPlanRefresh = async () => {
+    if (!selectedProjectId || !storyPlan.jobId) return;
+    setError(undefined);
+    try {
+      await followStoryPlan(selectedProjectId, storyPlan.jobId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  const handleStoryPlanApply = async () => {
+    if (!project || !selectedProjectId || !storyPlan.jobId || !storyPlan.plan) return;
+    const projectId = selectedProjectId;
+    const stillSelected = () => projectSelectionRef.current === projectId;
+    setError(undefined);
+    setStoryPlan((current) => ({ ...current, status: 'applying' }));
+    try {
+      const result = await applyCreativeStoryPlan(
+        projectId,
+        storyPlan.jobId,
+        project.versions.project,
+      );
+      const refreshed = await getCreativeProject(projectId);
+      if (!stillSelected()) return;
+      setProject(refreshed);
+      const firstEpisodeId = result.applied.episodeIds[0];
+      const firstEntityId = result.applied.entityIds[0];
+      if (firstEpisodeId) {
+        setSelectedEpisodeId(firstEpisodeId);
+        setSelectedShotId(refreshed.bundle.shots.find((shot) => shot.episodeId === firstEpisodeId)?.shotId);
+      }
+      if (firstEntityId) setSelectedEntityId(firstEntityId);
+      setStoryPlan((current) => ({
+        ...current,
+        status: 'applied',
+        projectVersion: result.applied.projectVersion,
+      }));
+      await refreshProjects(projectId);
+    } catch (reason) {
+      if (!stillSelected()) return;
+      setStoryPlan((current) => ({ ...current, status: current.plan ? 'succeeded' : 'failed' }));
+      setError(`${reason instanceof Error ? reason.message : String(reason)}；已保留生成预览。`);
+      const refreshed = await getCreativeProject(projectId).catch(() => undefined);
+      if (refreshed) setProject(refreshed);
     }
   };
 
@@ -891,6 +1017,116 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
               <button type="button" role="tab" aria-selected={view === 'canvas'} className={view === 'canvas' ? 'active' : ''} onClick={() => setView('canvas')}>流程画布</button>
             </div>
           </div>
+
+          <section className="story-planner" aria-label="故事规划">
+            <div className="story-planner-heading">
+              <div>
+                <span>STORY PLANNING</span>
+                <strong>从创作简报生成多集故事与设定</strong>
+                <p>先预览剧集、角色、场景和道具，确认后才追加到当前工程；已有内容不会被替换。</p>
+              </div>
+              <span className="story-plan-status" data-status={storyPlan.status}>
+                {storyPlanStatusLabels[storyPlan.status]}
+              </span>
+            </div>
+            <form className="story-planner-form" onSubmit={(event) => void handleStoryPlanSubmit(event)}>
+              <label>
+                <span>创作简报</span>
+                <textarea
+                  required
+                  rows={3}
+                  minLength={1}
+                  maxLength={20_000}
+                  placeholder="例如：围绕星门的新坐标续写三集，每集都有明确目标、转折与集尾钩子。"
+                  value={storyBrief}
+                  onChange={(event) => setStoryBrief(event.target.value)}
+                />
+              </label>
+              <div className="story-planner-controls">
+                <label>
+                  <span>新增集数</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={storyEpisodeCount}
+                    onChange={(event) => setStoryEpisodeCount(Math.min(12, Math.max(1, Number(event.target.value))))}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={
+                    !project || !storyBrief.trim() ||
+                    ['submitting', 'queued', 'running', 'waiting_human', 'applying'].includes(storyPlan.status)
+                  }
+                >
+                  {['submitting', 'queued', 'running'].includes(storyPlan.status) ? '正在生成…' : '生成规划预览'}
+                </button>
+                {storyPlan.status === 'waiting_human' && (
+                  <button className="story-plan-refresh" type="button" onClick={() => void handleStoryPlanRefresh()}>
+                    审批后刷新状态
+                  </button>
+                )}
+              </div>
+            </form>
+
+            {storyPlan.plan && (
+              <div className="story-plan-preview">
+                <div className="story-plan-title">
+                  <div>
+                    <span>PLAN PREVIEW</span>
+                    <h3>{storyPlan.plan.title}</h3>
+                    <p>{storyPlan.plan.logline}</p>
+                  </div>
+                  <dl>
+                    <div><dt>剧集</dt><dd>{storyPlan.plan.episodes.length}</dd></div>
+                    <div><dt>角色</dt><dd>{storyPlan.plan.characters.length}</dd></div>
+                    <div><dt>场景</dt><dd>{storyPlan.plan.scenes.length}</dd></div>
+                    <div><dt>道具</dt><dd>{storyPlan.plan.props.length}</dd></div>
+                  </dl>
+                </div>
+                <div className="story-plan-episodes">
+                  {storyPlan.plan.episodes.map((episode, index) => (
+                    <article key={`${episode.title}-${index}`}>
+                      <span>EP {String(index + 1).padStart(2, '0')}</span>
+                      <strong>{episode.title}</strong>
+                      <p>{episode.synopsis}</p>
+                      <small>{episode.durationSec}s · {episode.characterNames.join(' / ') || '无指定角色'}</small>
+                    </article>
+                  ))}
+                </div>
+                <div className="story-plan-entities">
+                  {[
+                    ['角色', storyPlan.plan.characters.map((item) => item.name)],
+                    ['场景', storyPlan.plan.scenes.map((item) => item.name)],
+                    ['道具', storyPlan.plan.props.map((item) => item.name)],
+                  ].map(([label, names]) => (
+                    <div key={String(label)}>
+                      <span>{label}</span>
+                      <p>{(names as string[]).join(' · ') || '本次无新增'}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="story-plan-apply">
+                  <small>
+                    {storyPlan.mode ? `${storyPlan.mode.toUpperCase()} · ` : ''}
+                    {storyPlan.provider ?? '结构化生成'} · Job {storyPlan.jobId}
+                  </small>
+                  <button
+                    type="button"
+                    disabled={storyPlan.status !== 'succeeded'}
+                    onClick={() => void handleStoryPlanApply()}
+                  >
+                    {storyPlan.status === 'applying'
+                      ? '写入中…'
+                      : storyPlan.status === 'applied'
+                        ? `已写入工程 v${storyPlan.projectVersion ?? ''}`
+                        : '写入可编辑工程'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
 
           <section className="batch-generation" aria-label="批量生成">
             <div className="batch-generation-copy">

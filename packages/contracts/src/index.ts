@@ -1035,6 +1035,58 @@ export const creativeGenerationBatchSchema = z.object({
   updatedAt: isoTimestampSchema,
 });
 
+export const creativeStoryPlanRequestSchema = z.object({
+  brief: z.string().min(1).max(20_000),
+  episodeCount: z.number().int().min(1).max(12).default(3),
+  route: providerRouteSchema.default('primary'),
+  generationNonce: z.number().int().nonnegative(),
+});
+
+export const creativeStoryPlanSchema = z.object({
+  title: z.string().min(1).max(300),
+  logline: z.string().min(1).max(2_000),
+  episodes: z.array(z.object({
+    title: z.string().min(1).max(300),
+    synopsis: z.string().min(1).max(10_000),
+    scriptContent: z.string().min(1).max(200_000),
+    durationSec: z.number().int().min(15).max(7_200),
+    characterNames: z.array(z.string().min(1).max(300)).max(50),
+    sceneNames: z.array(z.string().min(1).max(300)).max(50),
+    propNames: z.array(z.string().min(1).max(300)).max(50),
+  })).min(1).max(12),
+  characters: z.array(z.object({
+    name: z.string().min(1).max(300),
+    role: z.string().max(500),
+    personality: z.string().max(4_000),
+    appearance: z.string().max(10_000),
+    voiceStyle: z.string().max(2_000),
+    identityAnchors: z.array(z.string().min(1).max(1_000)).max(20),
+  })).max(50),
+  scenes: z.array(z.object({
+    name: z.string().min(1).max(300),
+    description: z.string().max(10_000),
+    location: z.string().min(1).max(500),
+    timeOfDay: z.string().max(200),
+    atmosphere: z.string().max(2_000),
+    lightingStyle: z.string().max(2_000),
+  })).max(50),
+  props: z.array(z.object({
+    name: z.string().min(1).max(300),
+    description: z.string().max(10_000),
+    category: z.string().max(300),
+    prompt: z.string().max(20_000),
+  })).max(50),
+});
+
+export const creativeStoryPlanApplyResultSchema = z.object({
+  projectId: idSchema,
+  jobId: idSchema,
+  projectVersion: z.number().int().positive(),
+  replayed: z.boolean(),
+  episodeIds: z.array(idSchema),
+  entityIds: z.array(idSchema),
+});
+
 export const providerCallbackSchema = z.object({
   eventId: idSchema,
   provider: z.string().min(1).max(200),
@@ -1083,6 +1135,9 @@ export const contractSchemas = {
   AsyncJobAccepted: asyncJobAcceptedSchema,
   CreativeGenerationBatchRequest: creativeGenerationBatchRequestSchema,
   CreativeGenerationBatch: creativeGenerationBatchSchema,
+  CreativeStoryPlanRequest: creativeStoryPlanRequestSchema,
+  CreativeStoryPlan: creativeStoryPlanSchema,
+  CreativeStoryPlanApplyResult: creativeStoryPlanApplyResultSchema,
 } as const;
 
 export type Locale = z.infer<typeof localeSchema>;
@@ -1138,6 +1193,9 @@ export type CreativeGenerationBatchStatus = z.infer<typeof creativeGenerationBat
 export type CreativeGenerationBatchRequest = z.infer<typeof creativeGenerationBatchRequestSchema>;
 export type CreativeGenerationBatchItem = z.infer<typeof creativeGenerationBatchItemSchema>;
 export type CreativeGenerationBatch = z.infer<typeof creativeGenerationBatchSchema>;
+export type CreativeStoryPlanRequest = z.infer<typeof creativeStoryPlanRequestSchema>;
+export type CreativeStoryPlan = z.infer<typeof creativeStoryPlanSchema>;
+export type CreativeStoryPlanApplyResult = z.infer<typeof creativeStoryPlanApplyResultSchema>;
 export type QCRecord = z.infer<typeof qcRecordSchema>;
 export type TechnicalQcExpectation = z.infer<typeof technicalQcExpectationSchema>;
 export type TechnicalQcReport = z.infer<typeof technicalQcReportSchema>;

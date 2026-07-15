@@ -18,6 +18,9 @@ GET /readyz
 ```text
 GET  /v1/creative/projects
 GET  /v1/creative/projects/:projectId
+POST /v1/creative/projects/:projectId/story-plans
+GET  /v1/creative/projects/:projectId/story-plans/:jobId
+POST /v1/creative/projects/:projectId/story-plans/:jobId/apply
 POST /v1/creative/imports/local-mini-drama/json
 POST /v1/creative/imports/local-mini-drama/zip
 POST /v1/creative/imports/onecrew/zip
@@ -70,6 +73,45 @@ curl --request POST \
 ```
 
 原生包必须包含 `onecrew-project.json`。导入会校验声明文件、唯一路径、解压限额和每个媒体的 SHA-256，并拒绝任何未声明文件。原生导入保留工程 ID，如数据库中已存在同 ID 项目则返回 409。
+
+### 生成并追加故事规划
+
+故事规划复用 Provider Gateway、BullMQ Job、幂等键与项目预算闸门。提交时服务会读取当前项目、已有剧集与设定，要求 LLM 按 `CreativeStoryPlan` JSON Schema 返回指定集数的分集剧情、剧本以及角色、场景、道具设定：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/projects/prj_demo/story-plans \
+  --header 'Content-Type: application/json' \
+  --header 'Idempotency-Key: prj-demo-story-plan-1' \
+  --data '{
+    "brief": "围绕星门的新坐标续写三集，每集有目标、转折和集尾钩子。",
+    "episodeCount": 3,
+    "route": "primary",
+    "generationNonce": 1
+  }'
+```
+
+响应为 HTTP 202，包含 `job_id`、Mock/Real 模式、Provider、预估成本和 Job 状态地址。若预算超限，Job 进入飞书人工闸门，不会在创作台增加第二套审批入口。
+
+读取 Job 与结构化预览：
+
+```bash
+curl http://127.0.0.1:3000/v1/creative/projects/prj_demo/story-plans/job_xxx
+```
+
+Job 成功后响应包含 `plan.title`、`plan.logline`、`plan.episodes`、`plan.characters`、`plan.scenes` 和 `plan.props`。预览不修改工程。确认后携带项目当前版本写入：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/projects/prj_demo/story-plans/job_xxx/apply \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "expectedProjectVersion": 1,
+    "actorOpenId": "ou_local_studio"
+  }'
+```
+
+写入在单个 PostgreSQL 事务中完成：新剧集按现有最大集数后追加，同类且同名的角色/场景/道具复用已有实体，新实体和剧集使用确定性 ID，项目版本递增，并写入带操作人的审计记录。重复应用同一 Job 会回放原结果；不同 Job 携带过期项目版本时返回 HTTP 409，不会部分写入或覆盖已有内容。
 
 ### 编辑剧集、素材设定和分镜
 

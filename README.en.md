@@ -19,6 +19,7 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 | Area | Capability | Status |
 | --- | --- | --- |
 | Projects and scripts | Multiple projects and episodes, script plans, character/scene/prop libraries, and structured storyboards | Implemented |
+| Story planning | Generate a requested number of episode stories, scripts, and character/scene/prop definitions from a brief; preview and atomically append | Mock runtime-verified; Real requires credentials |
 | Creative Studio | Script editing, storyboard list/canvas, character/scene/prop editing, asset binding, and final review | Implemented and browser-verified |
 | Single-shot generation | Generate images/videos from saved shots with entity references, previous-shot tail frames, continuity constraints, and asset version write-back | Mock browser-verified; Real requires credentials |
 | Batch generation | Fill only missing images/videos with durable batch progress, stop, refresh, and failed-item retry controls | Mock browser-verified |
@@ -120,16 +121,17 @@ pnpm infra:down
 Open `http://127.0.0.1:4173/#studio` to work with a project:
 
 1. switch the active project in the top bar, or import a `.onecrew.zip` / compatible ZIP archive;
-2. choose an episode and edit its title, summary, full script, and duration in the left rail;
-3. switch between the storyboard list and React Flow canvas, then select a shot;
-4. edit shot action, camera language, dialogue, narration, image/video prompts, negative prompt, and continuity notes;
-5. select a character, scene, or prop in the right-hand library; edit its common and type-specific fields, then bind versioned assets from the current project as references;
-6. save with the version shown in the editor. If another editor saved first, the stale update receives HTTP 409 and the Studio reloads the current server version instead of silently overwriting it;
-7. after saving the shot, click **Generate storyboard image** or **Generate video**. The Studio follows the asynchronous Job; image requests preserve entity references, the previous shot's tail frame, and continuity notes, while video requests prefer the newest image version for the current shot. Successful outputs enter the asset library and link to the previous version through `parentAssetId`;
-8. read the visible `MOCK` or real-provider label. Mock mode is for local development and does not create real media. Real generation requires configured provider credentials and positive prices. Jobs that exceed the project budget enter the human gate instead of spending past the limit;
-9. use **Fill missing storyboard images/videos** above the shot list to process only shots without the corresponding asset. Batch records live in PostgreSQL, so the latest progress returns after a page reload. You can stop unfinished Jobs or retry only failed/cancelled items;
-10. click **Run continuity QC** for an image or video already materialized in controlled MinIO/S3. OneCrew derives character identity, clothing, scene, prop, lighting, camera-axis, previous-tail-frame, and temporal-stability checks from the saved shot, then reuses the existing technical QC, VLM, and Feishu human gate. Mock placeholder URIs are never presented as checked media;
-11. click **Export OneCrew Project** to download a complete, re-importable ZIP containing the project, episodes, entities, shots, frame prompts, versioned asset metadata, media, and a SHA-256 for every media file.
+2. enter a creative brief and episode count under **Story Planning**. The asynchronous Job returns a preview of episode stories, scripts, and character/scene/prop definitions. Nothing changes until you click **Write to editable project**; applying is atomic and append-only, so existing episodes and definitions are never replaced;
+3. choose an episode and edit its title, summary, full script, and duration in the left rail;
+4. switch between the storyboard list and React Flow canvas, then select a shot;
+5. edit shot action, camera language, dialogue, narration, image/video prompts, negative prompt, and continuity notes;
+6. select a character, scene, or prop in the right-hand library; edit its common and type-specific fields, then bind versioned assets from the current project as references;
+7. save with the version shown in the editor. If another editor saved first, the stale update receives HTTP 409 and the Studio reloads the current server version instead of silently overwriting it;
+8. after saving the shot, click **Generate storyboard image** or **Generate video**. The Studio follows the asynchronous Job; image requests preserve entity references, the previous shot's tail frame, and continuity notes, while video requests prefer the newest image version for the current shot. Successful outputs enter the asset library and link to the previous version through `parentAssetId`;
+9. read the visible `MOCK` or real-provider label. Mock mode is for local development and does not create real media. Real generation requires configured provider credentials and positive prices. Jobs that exceed the project budget enter the human gate instead of spending past the limit;
+10. use **Fill missing storyboard images/videos** above the shot list to process only shots without the corresponding asset. Batch records live in PostgreSQL, so the latest progress returns after a page reload. You can stop unfinished Jobs or retry only failed/cancelled items;
+11. click **Run continuity QC** for an image or video already materialized in controlled MinIO/S3. OneCrew derives character identity, clothing, scene, prop, lighting, camera-axis, previous-tail-frame, and temporal-stability checks from the saved shot, then reuses the existing technical QC, VLM, and Feishu human gate. Mock placeholder URIs are never presented as checked media;
+12. click **Export OneCrew Project** to download a complete, re-importable ZIP containing the project, episodes, entities, shots, frame prompts, versioned asset metadata, media, and a SHA-256 for every media file.
 
 The Studio edits content and assets only. Approval, provider switching, and manual handoff still enter through the Feishu control plane so there is only one release-authority path.
 
@@ -200,6 +202,7 @@ The local API base URL is `http://127.0.0.1:3000`.
 | --- | --- |
 | Health | `GET /healthz`, `GET /readyz` |
 | Creative projects | `GET /v1/creative/projects`, `GET /v1/creative/projects/:projectId` |
+| Story planning | `POST /v1/creative/projects/:projectId/story-plans` to generate; `GET .../story-plans/:jobId` to preview; `POST .../story-plans/:jobId/apply` to append |
 | Script/shot editing | `PATCH /v1/creative/episodes/:episodeId`, `PATCH /v1/creative/shots/:shotId` |
 | Single-shot image/video generation | `POST /v1/creative/shots/:shotId/generations` |
 | Batch generation | `POST /v1/creative/projects/:projectId/generation-batches`; query/stop/retry under `/v1/creative/generation-batches/:batchId/...` |
@@ -360,11 +363,12 @@ docs/                   API, operations, configuration, and verification docs
 Latest complete local regression (2026-07-15):
 
 - lint, typecheck, and build passed across all 17 workspaces;
-- 85 unit tests passed;
-- 33 integration tests passed;
+- 89 unit tests passed;
+- 34 integration tests passed;
 - a fresh database applied 9 migrations and produced 22 business tables plus 10 demo shots;
 - JSON and ZIP project imports passed API smoke tests; ZIP media was written to local MinIO and bound to versioned assets; a OneCrew export containing three real MinIO assets passed browser-download and ZIP-integrity checks;
-- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including project switching, script/shot saves, character/scene/prop editing, versioned-asset binding, single-shot and batch image/video generation, durable batch recovery/stop/retry, continuity QC, version-chain write-back, version conflicts, canvas, export, and final review, with no errors or warnings in a clean browser session;
+- story planning ran through the local Mock Worker: a two-episode structured plan plus character/scene/prop definitions was previewed and appended in one transaction, project version advanced from v1 to v2, same-Job replay remained idempotent, and stale versions returned 409;
+- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including story-plan preview/apply, project switching, script/shot saves, character/scene/prop editing, versioned-asset binding, single-shot and batch image/video generation, durable batch recovery/stop/retry, continuity QC, version-chain write-back, version conflicts, canvas, export, and final review, with no errors or warnings in a clean browser session;
 - all 10 Final MP4 files were H.264/AAC at 30 fps;
 - the general QC suite passed all 15 technical checks and its Mock VLM decision; per-shot continuity QC also passed a full run against a decodable MinIO image, while an invalid input was verified to open the durable human gate;
 - the publish ZIP passed integrity checks for 14 entries, including eight bilingual promotional videos and twelve experiment seeds.

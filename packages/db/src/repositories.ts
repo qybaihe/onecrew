@@ -4,6 +4,7 @@ import {
   creativeEntitySchema,
   creativeGenerationBatchSchema,
   creativeProjectBundleSchema,
+  creativeStoryPlanApplyResultSchema,
   episodeSpecSchema,
   feishuCardActionSchema,
   framePromptSpecSchema,
@@ -27,6 +28,7 @@ import {
   type CreativeEntity,
   type CreativeGenerationBatch,
   type CreativeProjectBundle,
+  type CreativeStoryPlanApplyResult,
   type EpisodeSpec,
   type FeishuCardAction,
   type FramePromptSpec,
@@ -242,6 +244,15 @@ export interface CreativeEditContext {
   actorOpenId: string;
 }
 
+export interface CreativeStoryPlanAppendInput {
+  projectId: string;
+  jobId: string;
+  expectedProjectVersion: number;
+  actorOpenId: string;
+  episodes: EpisodeSpec[];
+  entities: CreativeEntity[];
+}
+
 type EpisodeEditableField = 'title' | 'description' | 'scriptContent' | 'durationSec' | 'status';
 type ShotEditableFields = Omit<ShotSpec, 'shotId' | 'projectId' | 'episodeId' | 'sequence'>;
 
@@ -404,6 +415,88 @@ export class CreativeRepository {
       shots: Object.fromEntries(shotRows.map((row) => [row.id, row.version])),
       framePrompts: Object.fromEntries(frameRows.map((row) => [row.id, row.version])),
     };
+  }
+
+  async appendStoryPlan(input: CreativeStoryPlanAppendInput): Promise<CreativeStoryPlanApplyResult> {
+    const plannedEpisodes = input.episodes.map((episode) => episodeSpecSchema.parse(episode));
+    const plannedEntities = input.entities.map((entity) => creativeEntitySchema.parse(entity));
+    if (plannedEpisodes.some((episode) => episode.projectId !== input.projectId)) {
+      throw new Error('Story plan episode projectId does not match target project');
+    }
+    if (plannedEntities.some((entity) => entity.projectId !== input.projectId)) {
+      throw new Error('Story plan entity projectId does not match target project');
+    }
+    const eventId = `story_plan_${input.jobId}`;
+    const auditId = `audit_${createInputHash({ eventId, action: 'apply_creative_story_plan' }).slice(0, 32)}`;
+    return this.db.transaction(async (tx) => {
+      const [existingAudit] = await tx.select().from(auditLogs).where(eq(auditLogs.auditId, auditId));
+      if (existingAudit) {
+        const replay = creativeStoryPlanApplyResultSchema.parse(existingAudit.details);
+        return { ...replay, replayed: true };
+      }
+      const [projectRow] = await tx.select().from(projects).where(eq(projects.projectId, input.projectId));
+      if (!projectRow) throw new RecordNotFoundError('project', input.projectId);
+      assertExpectedVersion(input.expectedProjectVersion, projectRow.version);
+      const project = projectSpecSchema.parse(projectRow.spec);
+      const existingEpisodeRows = await tx
+        .select({ episodeId: episodes.episodeId })
+        .from(episodes)
+        .where(eq(episodes.projectId, input.projectId));
+      const nextProject = projectSpecSchema.parse({
+        ...project,
+        totalEpisodes: existingEpisodeRows.length + plannedEpisodes.length,
+      });
+      const [updatedProject] = await tx
+        .update(projects)
+        .set({ spec: nextProject, version: input.expectedProjectVersion + 1, updatedAt: new Date() })
+        .where(and(eq(projects.projectId, input.projectId), eq(projects.version, input.expectedProjectVersion)))
+        .returning();
+      if (!updatedProject) {
+        return throwVersionConflict(this.db, 'project', input.projectId, input.expectedProjectVersion);
+      }
+      if (plannedEntities.length > 0) {
+        await tx.insert(creativeEntities).values(plannedEntities.map((entity) => ({
+          entityId: entity.entityId,
+          projectId: entity.projectId,
+          episodeId: entity.episodeId,
+          kind: entity.kind,
+          name: entity.name,
+          spec: entity,
+          status: entity.status,
+        })));
+      }
+      if (plannedEpisodes.length > 0) {
+        await tx.insert(episodes).values(plannedEpisodes.map((episode) => ({
+          episodeId: episode.episodeId,
+          projectId: episode.projectId,
+          episodeNumber: episode.episodeNumber,
+          spec: episode,
+          status: episode.status,
+        })));
+      }
+      const result = creativeStoryPlanApplyResultSchema.parse({
+        projectId: input.projectId,
+        jobId: input.jobId,
+        projectVersion: updatedProject.version,
+        replayed: false,
+        episodeIds: plannedEpisodes.map((episode) => episode.episodeId),
+        entityIds: plannedEntities.map((entity) => entity.entityId),
+      });
+      await tx.insert(auditLogs).values({
+        auditId,
+        source: 'creative_story_planner',
+        eventId,
+        projectId: input.projectId,
+        actorOpenId: input.actorOpenId,
+        action: 'apply_creative_story_plan',
+        targetType: 'project',
+        targetId: input.projectId,
+        expectedVersion: input.expectedProjectVersion,
+        outcome: 'accepted',
+        details: result,
+      });
+      return result;
+    });
   }
 
   async updateEpisode(

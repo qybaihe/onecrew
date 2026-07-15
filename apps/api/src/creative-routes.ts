@@ -3,6 +3,7 @@ import {
   buildCreativeShotGenerationRequest,
   convertLocalMiniDramaProject,
   CreativeContinuityQcAssetError,
+  CreativeStoryPlanValidationError,
   exportLocalMiniDramaArchive,
   exportOneCrewArchive,
   importLocalMiniDramaArchive,
@@ -13,6 +14,7 @@ import {
 import {
   characterSpecSchema,
   creativeGenerationBatchRequestSchema,
+  creativeStoryPlanRequestSchema,
   episodeSpecSchema,
   propSpecSchema,
   sceneSpecSchema,
@@ -29,6 +31,10 @@ import { VersionConflictError } from '@onecrew/domain';
 import type { S3MediaStore } from '@onecrew/media';
 import {
   CreativeGenerationBatchValidationError,
+  CreativeStoryPlanNotReadyError,
+  CreativeStoryPlanOutputError,
+  type CreativeStoryPlanner,
+  ProviderSubmissionInProgressError,
   type CreativeGenerationBatchOrchestrator,
   type ProviderOrchestrator,
   type QcOrchestrator,
@@ -53,6 +59,7 @@ export interface CreativeRouteOptions {
   generator?: Pick<ProviderOrchestrator, 'submit'>;
   batchGenerator?: Pick<CreativeGenerationBatchOrchestrator, 'submit' | 'get' | 'latest' | 'cancel' | 'retry'>;
   continuityQc?: Pick<QcOrchestrator, 'submit'>;
+  storyPlanner?: Pick<CreativeStoryPlanner, 'submit' | 'preview' | 'apply'>;
 }
 
 const importOptionsSchema = z.object({
@@ -115,6 +122,10 @@ const continuityQcSchema = z.object({
   qualityAttempt: z.number().int().min(1).max(100).default(1),
   autoRemediate: z.boolean().default(true),
 });
+const storyPlanApplySchema = z.object({
+  expectedProjectVersion: z.number().int().positive(),
+  actorOpenId: z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
+});
 const batchRetrySchema = z.object({ route: z.enum(['primary', 'fallback']).default('primary') });
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
@@ -126,6 +137,61 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
     if (!options) return creativeError(reply, new CreativeRoutesNotConfiguredError());
     try {
       return { projects: await options.repository.listProjects() };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.post('/v1/creative/projects/:projectId/story-plans', async (request, reply) => {
+    if (!options?.storyPlanner) return creativeError(reply, new CreativeStoryPlannerNotConfiguredError());
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingCreativeStoryPlanIdempotencyKeyError();
+      const { projectId } = request.params as { projectId: string };
+      const accepted = await options.storyPlanner.submit(
+        projectId,
+        creativeStoryPlanRequestSchema.parse(request.body),
+        idempotencyKey,
+      );
+      reply.code(202);
+      return {
+        job_id: accepted.jobId,
+        status: accepted.status,
+        mode: accepted.mode,
+        provider: accepted.provider,
+        route: accepted.route,
+        estimated_cost_cny: accepted.estimatedCostCny,
+        status_url: accepted.statusUrl,
+        replayed: accepted.replayed,
+        ...(accepted.warning ? { warning: accepted.warning } : {}),
+      };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.get('/v1/creative/projects/:projectId/story-plans/:jobId', async (request, reply) => {
+    if (!options?.storyPlanner) return creativeError(reply, new CreativeStoryPlannerNotConfiguredError());
+    try {
+      const { projectId, jobId } = request.params as { projectId: string; jobId: string };
+      return await options.storyPlanner.preview(projectId, jobId);
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.post('/v1/creative/projects/:projectId/story-plans/:jobId/apply', async (request, reply) => {
+    if (!options?.storyPlanner) return creativeError(reply, new CreativeStoryPlannerNotConfiguredError());
+    try {
+      const { projectId, jobId } = request.params as { projectId: string; jobId: string };
+      const input = storyPlanApplySchema.parse(request.body);
+      const applied = await options.storyPlanner.apply(
+        projectId,
+        jobId,
+        input.expectedProjectVersion,
+        input.actorOpenId,
+      );
+      return { ok: true, applied };
     } catch (error) {
       return creativeError(reply, error);
     }
@@ -494,6 +560,13 @@ export class CreativeContinuityQcNotConfiguredError extends Error {
   }
 }
 
+export class CreativeStoryPlannerNotConfiguredError extends Error {
+  constructor() {
+    super('Creative story planner is not configured');
+    this.name = 'CreativeStoryPlannerNotConfiguredError';
+  }
+}
+
 export class MissingCreativeGenerationIdempotencyKeyError extends Error {
   constructor() {
     super('Idempotency-Key header is required for creative generation');
@@ -505,6 +578,13 @@ export class MissingCreativeContinuityQcIdempotencyKeyError extends Error {
   constructor() {
     super('Idempotency-Key header is required for creative continuity QC');
     this.name = 'MissingCreativeContinuityQcIdempotencyKeyError';
+  }
+}
+
+export class MissingCreativeStoryPlanIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for creative story planning');
+    this.name = 'MissingCreativeStoryPlanIdempotencyKeyError';
   }
 }
 
@@ -522,14 +602,15 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeRoutesNotConfiguredError ||
     error instanceof CreativeMediaStoreNotConfiguredError ||
     error instanceof CreativeGenerationNotConfiguredError ||
-    error instanceof CreativeContinuityQcNotConfiguredError
+    error instanceof CreativeContinuityQcNotConfiguredError ||
+    error instanceof CreativeStoryPlannerNotConfiguredError
   ) {
     reply.code(503);
   } else if (error instanceof RecordNotFoundError) {
     reply.code(404);
-  } else if (error instanceof VersionConflictError) {
+  } else if (error instanceof VersionConflictError || error instanceof CreativeStoryPlanNotReadyError) {
     reply.code(409);
-  } else if (error instanceof IdempotencyConflictError) {
+  } else if (error instanceof IdempotencyConflictError || error instanceof ProviderSubmissionInProgressError) {
     reply.code(409);
   } else if (code === '23505') {
     reply.code(409);
@@ -539,7 +620,10 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeGenerationBatchValidationError ||
     error instanceof MissingCreativeGenerationIdempotencyKeyError ||
     error instanceof MissingCreativeContinuityQcIdempotencyKeyError ||
+    error instanceof MissingCreativeStoryPlanIdempotencyKeyError ||
     error instanceof CreativeContinuityQcAssetError ||
+    error instanceof CreativeStoryPlanOutputError ||
+    error instanceof CreativeStoryPlanValidationError ||
     error instanceof InvalidCreativeArchiveError ||
     /LocalMiniDrama|Archive|project\.json|declared media file|archive root|absolute path/i.test(message)
   ) {

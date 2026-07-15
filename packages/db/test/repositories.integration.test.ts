@@ -22,6 +22,66 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL repositories', () => {
+  it('atomically appends a generated story plan, bumps the project version, and replays by Job', async () => {
+    const projectId = `prj_story_append_${suffix}`;
+    const bundle = creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0',
+      source: { system: 'onecrew' },
+      project: {
+        projectId, nameZh: '故事追加测试', nameEn: 'Story Append Test', synopsis: '验证故事计划安全追加。',
+        audience: '开发测试', genres: ['test'], ownerOpenId: 'ou_story_owner', locales: ['zh-CN'],
+        aspectRatios: ['16:9'], budgetLimitCny: 1, totalEpisodes: 1, status: 'draft',
+      },
+      episodes: [{
+        episodeId: `episode_story_existing_${suffix}`, projectId, episodeNumber: 1, title: '序章',
+        scriptContent: '序章。', durationSec: 30, characterIds: [], sceneIds: [], propIds: [], status: 'draft',
+      }],
+      entities: [], shots: [], framePrompts: [], mediaFiles: [],
+    });
+    await repositories.creative.importBundle(bundle);
+    const jobId = `job_story_append_${suffix}`;
+    const entityId = `character_story_append_${suffix}`;
+    const episodeId = `episode_story_append_${suffix}`;
+    const appended = await repositories.creative.appendStoryPlan({
+      projectId,
+      jobId,
+      expectedProjectVersion: 1,
+      actorOpenId: 'ou_story_editor',
+      entities: [{
+        entityId, projectId, kind: 'character', name: '云岚', role: '导航员', identityAnchors: ['青绿披肩'],
+        referenceAssetIds: [], extraAssetIds: [], styleTokens: [], colorPalette: [], stages: [], sortOrder: 0,
+        status: 'draft',
+      }],
+      episodes: [{
+        episodeId, projectId, episodeNumber: 2, title: '星图回响', scriptContent: '云岚抵达星门。', durationSec: 60,
+        characterIds: [entityId], sceneIds: [], propIds: [], status: 'planning',
+      }],
+    });
+    expect(appended).toMatchObject({ projectId, jobId, projectVersion: 2, replayed: false });
+    const restored = await repositories.creative.getBundle(projectId);
+    expect(restored.project.totalEpisodes).toBe(2);
+    expect(restored.episodes.map((episode) => episode.episodeId)).toContain(episodeId);
+    expect(restored.entities.map((entity) => entity.entityId)).toContain(entityId);
+
+    await expect(repositories.creative.appendStoryPlan({
+      projectId,
+      jobId,
+      expectedProjectVersion: 2,
+      actorOpenId: 'ou_story_editor',
+      entities: [],
+      episodes: [],
+    })).resolves.toMatchObject({ projectVersion: 2, replayed: true, episodeIds: [episodeId] });
+
+    await expect(repositories.creative.appendStoryPlan({
+      projectId,
+      jobId: `job_story_stale_${suffix}`,
+      expectedProjectVersion: 1,
+      actorOpenId: 'ou_story_editor',
+      entities: [],
+      episodes: [],
+    })).rejects.toBeInstanceOf(VersionConflictError);
+  });
+
   it('imports and reads back a complete creative bundle transactionally', async () => {
     const now = new Date().toISOString();
     const projectId = `prj_creative_${suffix}`;
