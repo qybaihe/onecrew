@@ -104,11 +104,15 @@ export interface Versioned<T> {
 
 async function currentVersionOrThrow(
   db: OneCrewDatabase,
-  entity: 'project' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
   id: string,
 ): Promise<number> {
   if (entity === 'project') {
     const [row] = await db.select({ version: projects.version }).from(projects).where(eq(projects.projectId, id));
+    if (row) return row.version;
+  }
+  if (entity === 'episode') {
+    const [row] = await db.select({ version: episodes.version }).from(episodes).where(eq(episodes.episodeId, id));
     if (row) return row.version;
   }
   if (entity === 'shot') {
@@ -143,7 +147,7 @@ async function currentVersionOrThrow(
 
 async function throwVersionConflict(
   db: OneCrewDatabase,
-  entity: 'project' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
   id: string,
   expectedVersion: number,
 ): Promise<never> {
@@ -197,6 +201,30 @@ export interface CreativeBundleImportResult {
   framePrompts: number;
   assets: number;
 }
+
+export interface CreativeRecordVersions {
+  project: number;
+  episodes: Record<string, number>;
+  entities: Record<string, number>;
+  shots: Record<string, number>;
+  framePrompts: Record<string, number>;
+}
+
+export interface CreativeEditContext {
+  editId: string;
+  actorOpenId: string;
+}
+
+type EpisodeEditableField = 'title' | 'description' | 'scriptContent' | 'durationSec' | 'status';
+type ShotEditableFields = Omit<ShotSpec, 'shotId' | 'projectId' | 'episodeId' | 'sequence'>;
+
+export type CreativeEpisodePatch = {
+  [Field in EpisodeEditableField]?: EpisodeSpec[Field] | undefined;
+};
+
+export type CreativeShotPatch = {
+  [Field in keyof ShotEditableFields]?: ShotEditableFields[Field] | undefined;
+};
 
 export class CreativeRepository {
   constructor(private readonly db: OneCrewDatabase) {}
@@ -327,6 +355,111 @@ export class CreativeRepository {
       .where(eq(assets.projectId, projectId))
       .orderBy(desc(assets.createdAt));
     return rows.map((row) => assetRecordSchema.parse(row.record));
+  }
+
+  async getRecordVersions(projectId: string): Promise<CreativeRecordVersions> {
+    const [projectRows, episodeRows, entityRows, shotRows] = await Promise.all([
+      this.db.select({ projectId: projects.projectId, version: projects.version }).from(projects).where(eq(projects.projectId, projectId)),
+      this.db.select({ id: episodes.episodeId, version: episodes.version }).from(episodes).where(eq(episodes.projectId, projectId)),
+      this.db.select({ id: creativeEntities.entityId, version: creativeEntities.version }).from(creativeEntities).where(eq(creativeEntities.projectId, projectId)),
+      this.db.select({ id: shots.shotId, version: shots.version }).from(shots).where(eq(shots.projectId, projectId)),
+    ]);
+    const [projectRow] = projectRows;
+    if (!projectRow) throw new RecordNotFoundError('project', projectId);
+    const shotIds = shotRows.map((row) => row.id);
+    const frameRows = shotIds.length > 0
+      ? await this.db.select({ id: framePrompts.framePromptId, version: framePrompts.version }).from(framePrompts).where(inArray(framePrompts.shotId, shotIds))
+      : [];
+    return {
+      project: projectRow.version,
+      episodes: Object.fromEntries(episodeRows.map((row) => [row.id, row.version])),
+      entities: Object.fromEntries(entityRows.map((row) => [row.id, row.version])),
+      shots: Object.fromEntries(shotRows.map((row) => [row.id, row.version])),
+      framePrompts: Object.fromEntries(frameRows.map((row) => [row.id, row.version])),
+    };
+  }
+
+  async updateEpisode(
+    episodeId: string,
+    expectedVersion: number,
+    patch: CreativeEpisodePatch,
+    context: CreativeEditContext,
+  ): Promise<Versioned<EpisodeSpec>> {
+    const [currentRow] = await this.db.select().from(episodes).where(eq(episodes.episodeId, episodeId));
+    if (!currentRow) throw new RecordNotFoundError('episode', episodeId);
+    assertExpectedVersion(expectedVersion, currentRow.version);
+    const current = episodeSpecSchema.parse(currentRow.spec);
+    const next = episodeSpecSchema.parse({
+      ...current,
+      ...patch,
+      episodeId: current.episodeId,
+      projectId: current.projectId,
+      episodeNumber: current.episodeNumber,
+    });
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(episodes)
+        .set({ spec: next, status: next.status, version: expectedVersion + 1, updatedAt: new Date() })
+        .where(and(eq(episodes.episodeId, episodeId), eq(episodes.version, expectedVersion)))
+        .returning();
+      if (!row) return throwVersionConflict(this.db, 'episode', episodeId, expectedVersion);
+      await tx.insert(auditLogs).values({
+        auditId: `audit_${createInputHash({ editId: context.editId, action: 'update_episode', episodeId }).slice(0, 32)}`,
+        source: 'creative_studio',
+        eventId: context.editId,
+        projectId: current.projectId,
+        actorOpenId: context.actorOpenId,
+        action: 'update_episode',
+        targetType: 'episode',
+        targetId: episodeId,
+        expectedVersion,
+        outcome: 'accepted',
+        details: { changedFields: Object.keys(patch), version: row.version },
+      });
+      return { value: episodeSpecSchema.parse(row.spec), version: row.version };
+    });
+  }
+
+  async updateShot(
+    shotId: string,
+    expectedVersion: number,
+    patch: CreativeShotPatch,
+    context: CreativeEditContext,
+  ): Promise<Versioned<ShotSpec>> {
+    const [currentRow] = await this.db.select().from(shots).where(eq(shots.shotId, shotId));
+    if (!currentRow) throw new RecordNotFoundError('shot', shotId);
+    assertExpectedVersion(expectedVersion, currentRow.version);
+    const current = shotSpecSchema.parse(currentRow.spec);
+    const next = shotSpecSchema.parse({
+      ...current,
+      ...patch,
+      shotId: current.shotId,
+      projectId: current.projectId,
+      episodeId: current.episodeId,
+      sequence: current.sequence,
+    });
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(shots)
+        .set({ spec: next, status: next.status, version: expectedVersion + 1, updatedAt: new Date() })
+        .where(and(eq(shots.shotId, shotId), eq(shots.version, expectedVersion)))
+        .returning();
+      if (!row) return throwVersionConflict(this.db, 'shot', shotId, expectedVersion);
+      await tx.insert(auditLogs).values({
+        auditId: `audit_${createInputHash({ editId: context.editId, action: 'update_shot', shotId }).slice(0, 32)}`,
+        source: 'creative_studio',
+        eventId: context.editId,
+        projectId: current.projectId,
+        actorOpenId: context.actorOpenId,
+        action: 'update_shot',
+        targetType: 'shot',
+        targetId: shotId,
+        expectedVersion,
+        outcome: 'accepted',
+        details: { changedFields: Object.keys(patch), version: row.version },
+      });
+      return { value: shotSpecSchema.parse(row.spec), version: row.version };
+    });
   }
 
   async createEpisode(input: EpisodeSpec): Promise<Versioned<EpisodeSpec>> {
@@ -1274,6 +1407,7 @@ export interface AuditLogInput {
     | 'feishu_base_sync'
     | 'provider_gateway'
     | 'provider_callback'
+    | 'creative_studio'
     | 'workflow';
   eventId: string;
   action: string;

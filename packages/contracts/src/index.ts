@@ -622,6 +622,7 @@ export const assetRecordSchema = z.object({
   seed: z.string().max(200).optional(),
   source: z.string().min(1).max(2_000),
   license: z.string().min(1).max(2_000),
+  creativeRole: z.string().min(1).max(200).optional(),
   contentHash: sha256Schema,
   status: assetStatusSchema,
   createdAt: isoTimestampSchema,

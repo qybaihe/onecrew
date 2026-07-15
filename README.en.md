@@ -19,8 +19,9 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 | Area | Capability | Status |
 | --- | --- | --- |
 | Projects and scripts | Multiple projects and episodes, script plans, character/scene/prop libraries, and structured storyboards | Implemented |
-| Creative Studio | Episode navigation, storyboard list, React Flow canvas, shot details, asset relationships, and final review | First version implemented |
-| Project import | Import structured JSON or ZIP archives with media into PostgreSQL and S3/MinIO after validation | Implemented and tested |
+| Creative Studio | Script editing, storyboard list/canvas, prompt and continuity editing, asset library, and final review | Implemented and browser-verified |
+| Project import/export | Import structured JSON or ZIP archives with media; export portable OneCrew archives with SHA-256 integrity data | Implemented and tested |
+| Concurrent editing | Optimistic episode/shot versions, 409 conflict protection, and accepted-edit auditing | Implemented and tested |
 | Design system | Parse Open Design / `DESIGN.md` and compile immutable Design Packs | Implemented |
 | Provider Gateway | Primary/Fallback routing for LLM, VLM, image, video, and TTS providers | Mock verified; Real adapters implemented |
 | Job system | BullMQ queues, idempotency, budget gates, retries, cancellation, and signed callbacks | Implemented and tested |
@@ -111,6 +112,19 @@ Stop the local infrastructure with:
 pnpm infra:down
 ```
 
+## Using the Creative Studio
+
+Open `http://127.0.0.1:4173/#studio` to work with a project:
+
+1. switch the active project in the top bar, or import a `.onecrew.zip` / compatible ZIP archive;
+2. choose an episode and edit its title, summary, full script, and duration in the left rail;
+3. switch between the storyboard list and React Flow canvas, then select a shot;
+4. edit shot action, camera language, dialogue, narration, image/video prompts, negative prompt, and continuity notes;
+5. save with the version shown in the editor. If another editor saved first, the stale update receives HTTP 409 and the Studio reloads the current server version instead of silently overwriting it;
+6. click **Export OneCrew Project** to download a complete, re-importable ZIP containing the project, episodes, entities, shots, frame prompts, versioned asset metadata, media, and a SHA-256 for every media file.
+
+The Studio edits content and assets only. Approval, provider switching, and manual handoff still enter through the Feishu control plane so there is only one release-authority path.
+
 ## Split-process development
 
 For a production-like local workflow, prepare infrastructure and data first:
@@ -178,7 +192,9 @@ The local API base URL is `http://127.0.0.1:3000`.
 | --- | --- |
 | Health | `GET /healthz`, `GET /readyz` |
 | Creative projects | `GET /v1/creative/projects`, `GET /v1/creative/projects/:projectId` |
-| Project import | `POST /v1/creative/imports/...` for structured JSON and ZIP archives with media |
+| Script/shot editing | `PATCH /v1/creative/episodes/:episodeId`, `PATCH /v1/creative/shots/:shotId` |
+| Project import | `POST /v1/creative/imports/...` for structured JSON, OneCrew ZIP, and compatible ZIP archives |
+| Project export | `GET /v1/creative/projects/:projectId/exports/onecrew.zip` |
 | Script plan | `POST /v1/projects/:projectId/plan` |
 | Image generation | `POST /v1/images/generate` |
 | Video generation | `POST /v1/shots/generate` |
@@ -300,7 +316,7 @@ apps/
 packages/
   config/              Zod environment contract
   contracts/           Shared contracts and JSON Schemas
-  creative/            Creative domain model, project import, media materialization
+  creative/            Creative domain model, project import/export, media materialization
   domain/              State machines, versions, and input hashes
   db/                  Drizzle schema, migrations, seed, repositories
   design-adapter/      Open Design parsing and Design Pack compilation
@@ -324,6 +340,8 @@ docs/                   API, operations, configuration, and verification docs
 - Asset records include source, provider, model, seed, content hash, and license.
 - Cached Jobs reuse the original asset ID. Regeneration creates a new version connected to the previous version through `parentAssetId`.
 - Feishu stores control data and controlled links, not large media files.
+- Episode and shot edits use optimistic versions; accepted changes and the actor are written to the audit log.
+- OneCrew project ZIPs preserve the full creative contract and media. Import rejects traversal, duplicate or undeclared entries, expansion-limit violations, and media hash mismatches.
 - The Studio can organize creative data and media, but it does not expose approval, release, or provider-switch actions. Those actions enter only through the Feishu control plane.
 
 ## Tests and current completion
@@ -331,11 +349,11 @@ docs/                   API, operations, configuration, and verification docs
 Latest complete local regression (2026-07-15):
 
 - lint, typecheck, and build passed across all 17 workspaces;
-- 76 unit tests passed;
+- 79 unit tests passed;
 - 33 integration tests passed;
 - a fresh database applied 8 migrations and produced 21 business tables plus 10 demo shots;
-- JSON and ZIP project imports passed API smoke tests; ZIP media was written to local MinIO and bound to versioned assets;
-- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including project switching, canvas nodes, shot details, and final review, with no browser console errors or warnings;
+- JSON and ZIP project imports passed API smoke tests; ZIP media was written to local MinIO and bound to versioned assets; a OneCrew export containing three real MinIO assets passed browser-download and ZIP-integrity checks;
+- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including project switching, script/shot saves, version conflicts, canvas, export, and final review, with no errors or warnings in a clean browser session;
 - all 10 Final MP4 files were H.264/AAC at 30 fps;
 - 15 technical QC checks and the Mock VLM decision passed;
 - the publish ZIP passed integrity checks for 14 entries, including eight bilingual promotional videos and twelve experiment seeds.

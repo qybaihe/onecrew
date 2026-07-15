@@ -2,6 +2,12 @@ import AdmZip from 'adm-zip';
 import { describe, expect, it } from 'vitest';
 
 import {
+  exportLocalMiniDramaArchive,
+  exportOneCrewArchive,
+  importOneCrewArchive,
+  materializeOneCrewArchive,
+} from './creative-export.js';
+import {
   convertLocalMiniDramaProject,
   importLocalMiniDramaArchive,
   materializeCreativeArchive,
@@ -183,5 +189,99 @@ describe('LocalMiniDrama adapter', () => {
       result.bundle.shots[0]?.firstFrameAssetId,
     );
     expect(writes).toEqual(expect.arrayContaining([expect.objectContaining({ contentType: 'video/mp4' })]));
+  });
+
+  it('exports a portable compatible ZIP that can be imported again', async () => {
+    const sourceZip = new AdmZip();
+    sourceZip.addFile('project.json', Buffer.from(JSON.stringify(fixture)));
+    for (const mediaPath of [
+      'media/characters/lin.png',
+      'media/characters/lin-side.png',
+      'media/scenes/gate.png',
+      'media/props/plate.png',
+      'media/storyboards/shot-1-first.png',
+      'media/videos/shot-1.mp4',
+    ]) {
+      sourceZip.addFile(mediaPath, Buffer.from(`fixture:${mediaPath}`));
+    }
+    const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+    const parsed = importLocalMiniDramaArchive(sourceZip.toBuffer(), { projectId: 'prj_export_source' });
+    const materialized = await materializeCreativeArchive(parsed, {
+      async put(input) {
+        const uri = `s3://onecrew-test/${input.key}`;
+        objects.set(uri, { bytes: input.bytes, contentType: input.contentType });
+        return { uri };
+      },
+    });
+    const exported = await exportLocalMiniDramaArchive(materialized.bundle, materialized.assets, {
+      async get(uri) {
+        const object = objects.get(uri);
+        if (!object) throw new Error(`missing fake object: ${uri}`);
+        return { ...object, key: uri.slice(uri.indexOf('/', 5) + 1) };
+      },
+    });
+
+    const zip = new AdmZip(exported.buffer);
+    const projectJson = JSON.parse(zip.readAsText('project.json')) as {
+      version: string;
+      episodes: Array<{ storyboards: Array<{ image_generations: unknown[]; frame_prompts: unknown[] }> }>;
+    };
+    expect(projectJson.version).toBe('1.4');
+    expect(projectJson.episodes[0]?.storyboards[0]?.image_generations).toHaveLength(1);
+    expect(projectJson.episodes[0]?.storyboards[0]?.frame_prompts).toHaveLength(2);
+    expect(exported.mediaFiles).toBe(materialized.assets.length);
+
+    const roundTrip = importLocalMiniDramaArchive(exported.buffer, { projectId: 'prj_export_roundtrip' });
+    expect(roundTrip.bundle.episodes).toHaveLength(materialized.bundle.episodes.length);
+    expect(roundTrip.bundle.shots[0]).toMatchObject({
+      action: materialized.bundle.shots[0]?.action,
+      creationMode: 'universal',
+      cameraAngle: { horizontal: '正面', vertical: '平视' },
+    });
+    expect(roundTrip.bundle.framePrompts.map((frame) => frame.frameType)).toEqual(['first', 'last']);
+  });
+
+  it('exports and materializes the native OneCrew archive without losing asset metadata', async () => {
+    const bundle = convertLocalMiniDramaProject(fixture, { projectId: 'prj_native_export' });
+    const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+    const sourceFiles = new Map(bundle.mediaFiles.map((media) => [media.sourcePath, Buffer.from(media.sourcePath)]));
+    const materialized = await materializeCreativeArchive({ bundle, files: sourceFiles }, {
+      async put(input) {
+        const uri = `s3://onecrew-test/${input.key}`;
+        objects.set(uri, { bytes: input.bytes, contentType: input.contentType });
+        return { uri };
+      },
+    });
+    const exported = await exportOneCrewArchive(materialized.bundle, materialized.assets, {
+      async get(uri) {
+        const object = objects.get(uri);
+        if (!object) throw new Error(`missing fake object: ${uri}`);
+        return { ...object, key: uri.slice(uri.indexOf('/', 5) + 1) };
+      },
+    });
+    const parsed = importOneCrewArchive(exported.buffer);
+    const restored = await materializeOneCrewArchive(parsed, {
+      async put(input) {
+        return { uri: `s3://onecrew-restored/${input.key}` };
+      },
+    });
+
+    expect(parsed.manifest.format).toBe('onecrew-creative-project');
+    expect(restored.bundle).toEqual(materialized.bundle);
+    expect(restored.assets).toHaveLength(materialized.assets.length);
+    expect(restored.assets[0]).toMatchObject({
+      assetId: materialized.assets[0]?.assetId,
+      contentHash: materialized.assets[0]?.contentHash,
+      creativeRole: materialized.assets[0]?.creativeRole,
+    });
+    expect(restored.assets[0]?.uri).toMatch(/^s3:\/\/onecrew-restored\//);
+
+    const originalZip = new AdmZip(exported.buffer);
+    const tamperedZip = new AdmZip();
+    for (const entry of originalZip.getEntries()) {
+      const bytes = entry.entryName.startsWith('media/assets/') ? Buffer.from('tampered') : entry.getData();
+      tamperedZip.addFile(entry.entryName, bytes);
+    }
+    expect(() => importOneCrewArchive(tamperedZip.toBuffer())).toThrow(/media hash mismatch/);
   });
 });

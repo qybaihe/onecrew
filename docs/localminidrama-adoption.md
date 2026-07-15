@@ -19,7 +19,7 @@
 | 项目管理 | Drama 列表、详情、软删除 | ProjectSpec + 创作项目 API + React 项目页 | 已验证 |
 | 多剧集 | episodes、分集剧本和时长 | EpisodeSpec + PostgreSQL episodes | 已验证 |
 | 故事生成 | 多集故事 JSON 生成 | Provider Gateway 的结构化故事规划 | 未开始 |
-| 剧本编辑 | 分集 script_content 编辑 | React 剧本编辑器 + 版本/审计 | 未开始 |
+| 剧本编辑 | 分集 script_content 编辑 | React 剧本编辑器 + 版本/审计 | 已验证 |
 | 角色提取与生成 | 角色描述、形象、多图、四视图 | CharacterSpec + 角色身份锚点 + 版本化资产 | 实现中 |
 | 角色阶段造型 | stages、服装和身份锚点 | CharacterSpec.stages + 连续性约束 | 已验证 |
 | 场景提取与生成 | 场景库、时间、提示词、多图 | SceneSpec + 项目/全局素材检索 | 实现中 |
@@ -33,14 +33,15 @@
 | 连续性快照 | continuity_snapshot | ContinuitySnapshot + QC 检查 | 实现中 |
 | 尾帧衔接 | 上一镜尾帧作为下一镜参考 | ShotSpec 首尾帧关系 + Provider reference assets | 实现中 |
 | 四宫格/多参考图 | sharp 切图、`@图片N` | Media 预处理 + Provider 多参考图契约 | 未开始 |
-| 图片/视频提示词编辑 | 分镜级编辑与重建 | React 分镜编辑器 + 版本审计 | 未开始 |
+| 图片/视频提示词编辑 | 分镜级编辑 | React 分镜编辑器 + 乐观版本 + 审计 | 已验证 |
+| 分镜编辑后重建 | 单镜重新生成 | 编辑结果提交 Provider Job 并保留父资产 | 未开始 |
 | TTS 与旁白 | 对白、旁白、本地音频 | 中英 Locale Pack + TTS Job + 旁白字段 | 实现中 |
 | 批量生成 | 缺失项跳过、并发、停止和重试 | BullMQ 幂等批任务 + 取消/重试/成本 | 未开始 |
 | 工作流分组 | 框选分镜、组合步骤、整组重跑 | Creative Workflow Group + LangGraph/BullMQ | 未开始 |
-| 列表编辑视图 | FilmCreate | React 创作工作台列表模式 | 未开始 |
+| 列表编辑视图 | FilmCreate | React 创作工作台列表模式 | 已验证 |
 | 画布视图 | Vue Flow DramaCanvas | React Flow 创作画布；不含审批动作 | 已验证 |
 | 工程 ZIP 导入 | project.json + media，格式 1.4 | LocalMiniDrama ZIP Adapter + MinIO 导入 | 已验证 |
-| 工程 ZIP 导出 | 全量数据和媒体打包 | OneCrew Creative Bundle + 兼容导出 | 未开始 |
+| 工程 ZIP 导出 | 全量数据和媒体打包 | OneCrew Creative Bundle + 兼容导出 + 媒体 SHA-256 | 已验证 |
 | AI 配置 | 本地页面和 SQLite 明文配置 | 不复制 UI；环境/Secret Manager + Provider Adapter | 不引入 |
 | 多 Provider | 通义、火山、可灵、Gemini、Vidu 等 | 每能力主备两条路由，按需求移植适配 | 实现中 |
 | 本地 SQLite | better-sqlite3 | PostgreSQL + Drizzle，保持审计和并发能力 | 不引入 |
@@ -60,6 +61,16 @@
 5. 导入 API 支持 JSON 和 ZIP，媒体进入 S3/MinIO，导入记录来源提交、格式版本、哈希和许可证。
 6. 单元测试覆盖字段映射、跨数组索引关系、场景去重、首尾帧绑定和恶意 ZIP 路径拒绝。
 7. 集成测试证明导入事务可落库并可完整读回。
+
+## 第二条纵向切片：编辑与可移植工程
+
+1. 项目详情同时返回项目、剧集、创作实体、分镜和帧提示词的当前版本。
+2. 剧集和分镜 PATCH 使用乐观锁；过期请求返回 409，成功请求与操作人写入 `audit_logs`。
+3. React 界面可编辑剧本、分镜动作、镜头、对白/旁白、图像/视频/负向提示词与连续性备注，并明确显示版本和保存状态。
+4. OneCrew 原生 ZIP 包含完整 `CreativeProjectBundle`、资产记录与受控媒体；每个媒体都有独立 SHA-256。
+5. 原生 ZIP 可重新导入，并拒绝路径穿越、重复路径、未声明文件、缺失文件、超限解压与哈希篡改。
+6. 兼容导出能往返读回结构化镜头、图片历史、首尾帧提示词和媒体。
+7. 真实浏览器验证剧本/分镜保存、版本增长、409 冲突和含 3 个 MinIO 媒体的工程下载；桌面与 `390 × 844` 布局通过，干净会话控制台无错误。
 
 ## 明确不复制的核心负担
 

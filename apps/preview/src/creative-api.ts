@@ -1,4 +1,10 @@
-import type { AssetRecord, CreativeProjectBundle, ProjectSpec } from '@onecrew/contracts';
+import type {
+  AssetRecord,
+  CreativeProjectBundle,
+  EpisodeSpec,
+  ProjectSpec,
+  ShotSpec,
+} from '@onecrew/contracts';
 
 interface ProjectListResponse {
   projects: ProjectSpec[];
@@ -7,6 +13,13 @@ interface ProjectListResponse {
 export interface CreativeProjectResponse {
   bundle: CreativeProjectBundle;
   assets: AssetRecord[];
+  versions: {
+    project: number;
+    episodes: Record<string, number>;
+    entities: Record<string, number>;
+    shots: Record<string, number>;
+    framePrompts: Record<string, number>;
+  };
 }
 
 export interface CreativeImportResponse {
@@ -21,6 +34,33 @@ export interface CreativeImportResponse {
   };
   media: number;
 }
+
+interface CreativeEditResponse<Record> {
+  ok: true;
+  record: Record;
+  version: number;
+}
+
+export type EpisodeEditPatch = Partial<
+  Pick<EpisodeSpec, 'title' | 'description' | 'scriptContent' | 'durationSec' | 'status'>
+>;
+
+export type ShotEditPatch = Partial<
+  Pick<
+    ShotSpec,
+    | 'title'
+    | 'description'
+    | 'action'
+    | 'camera'
+    | 'dialogueZh'
+    | 'narrationZh'
+    | 'imagePrompt'
+    | 'videoPrompt'
+    | 'negativePrompt'
+    | 'durationSec'
+    | 'continuity'
+  >
+>;
 
 async function json<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -60,12 +100,67 @@ export async function getCreativeProject(projectId: string): Promise<CreativePro
 }
 
 export async function importCreativeArchive(file: File): Promise<CreativeImportResponse> {
+  const isNativeArchive = file.name.toLowerCase().endsWith('.onecrew.zip');
   const projectId = `prj_studio_${Date.now()}`;
   const query = new URLSearchParams({ projectId, ownerOpenId: 'ou_local_studio' });
-  const response = await request(`/v1/creative/imports/local-mini-drama/zip?${query}`, {
+  const endpoint = isNativeArchive
+    ? '/v1/creative/imports/onecrew/zip'
+    : `/v1/creative/imports/local-mini-drama/zip?${query}`;
+  const response = await request(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/zip' },
     body: file,
   });
   return json<CreativeImportResponse>(response);
+}
+
+function editContext(expectedVersion: number) {
+  return {
+    expectedVersion,
+    editId: `studio_${crypto.randomUUID()}`,
+    actorOpenId: 'ou_local_studio',
+  };
+}
+
+export async function updateCreativeEpisode(
+  episodeId: string,
+  expectedVersion: number,
+  patch: EpisodeEditPatch,
+): Promise<CreativeEditResponse<EpisodeSpec>> {
+  const response = await request(`/v1/creative/episodes/${encodeURIComponent(episodeId)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...editContext(expectedVersion), patch }),
+  });
+  return json<CreativeEditResponse<EpisodeSpec>>(response);
+}
+
+export async function updateCreativeShot(
+  shotId: string,
+  expectedVersion: number,
+  patch: ShotEditPatch,
+): Promise<CreativeEditResponse<ShotSpec>> {
+  const response = await request(`/v1/creative/shots/${encodeURIComponent(shotId)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...editContext(expectedVersion), patch }),
+  });
+  return json<CreativeEditResponse<ShotSpec>>(response);
+}
+
+export async function downloadCreativeProject(projectId: string): Promise<void> {
+  const response = await request(`/v1/creative/projects/${encodeURIComponent(projectId)}/exports/onecrew.zip`);
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `OneCrew API returned ${response.status}`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${projectId}.onecrew.zip`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }

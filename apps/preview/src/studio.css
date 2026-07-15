@@ -46,6 +46,7 @@
 .studio-button:hover, .mode-switch:hover { transform: translateY(-2px); border-color: oklch(0.7 0.12 187 / 0.7); }
 .studio-button:active, .mode-switch:active { transform: scale(0.97); }
 .studio-button.primary { color: oklch(0.13 0.03 245); background: var(--teal); border-color: var(--teal); font-weight: 700; }
+.studio-button.export { color: var(--amber); background: oklch(0.26 0.065 82 / 0.2); border-color: oklch(0.84 0.17 84 / 0.45); }
 .studio-button.ghost, .mode-switch { background: transparent; }
 .studio-button:disabled { cursor: wait; opacity: 0.58; transform: none; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -104,6 +105,55 @@
 .episode-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; }
 .episode-item small { color: var(--muted); font-size: 0.64rem; }
 
+.episode-editor {
+  margin-top: 1.2rem;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+  background: oklch(0.205 0.05 245 / 0.78);
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+.editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.8rem; }
+.editor-heading span, .editor-heading strong { display: block; }
+.editor-heading span { color: var(--teal); font: 0.57rem ui-monospace, monospace; letter-spacing: 0.12em; }
+.editor-heading strong { margin-top: 0.25rem; font-size: 0.83rem; }
+.editor-heading small { color: var(--amber); font: 0.6rem ui-monospace, monospace; }
+.episode-editor label, .inspector-grid label { min-width: 0; display: grid; gap: 0.32rem; }
+.episode-editor label > span, .inspector-grid label > span { color: var(--muted); font-size: 0.62rem; }
+.episode-editor input, .episode-editor textarea, .inspector-grid input, .inspector-grid textarea {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.7rem;
+  color: var(--ink);
+  background: oklch(0.14 0.035 250 / 0.72);
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  resize: vertical;
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+.episode-editor input:focus, .episode-editor textarea:focus, .inspector-grid input:focus, .inspector-grid textarea:focus {
+  outline: 0;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px oklch(0.74 0.135 185 / 0.12);
+}
+.episode-editor .script-textarea { min-height: 9rem; font-family: "Songti SC", Georgia, serif; }
+.editor-footer { display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: end; gap: 0.6rem; }
+.editor-footer button, .inspector-actions button {
+  min-height: 2.75rem;
+  padding: 0 0.9rem;
+  color: oklch(0.13 0.03 245);
+  background: var(--teal);
+  border: 0;
+  border-radius: 0.58rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.editor-footer button:disabled, .inspector-actions button:disabled { cursor: wait; opacity: 0.6; }
+
 .studio-boundary-note { margin-top: 1.4rem; padding: 0.85rem; display: flex; gap: 0.65rem; color: var(--muted); background: oklch(0.23 0.055 225 / 0.44); border: 1px solid var(--line); border-radius: 0.75rem; font-size: 0.69rem; line-height: 1.6; }
 .studio-boundary-note > span { flex: 0 0 auto; color: var(--teal); }
 .studio-boundary-note p { margin: 0; }
@@ -157,12 +207,16 @@
 .react-flow__controls button { color: var(--ink); background: oklch(0.22 0.05 245); border-bottom-color: var(--line); }
 .react-flow__attribution { color: var(--muted); background: transparent; }
 
-.shot-inspector { margin-top: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 0.8rem; overflow: hidden; }
-.shot-inspector > div { min-width: 0; padding: 0.9rem; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.shot-inspector > div:nth-child(even) { border-right: 0; }
-.shot-inspector > div:nth-last-child(-n + 2) { border-bottom: 0; }
-.shot-inspector span { color: var(--teal); font: 0.6rem ui-monospace, monospace; letter-spacing: 0.09em; }
-.shot-inspector p { margin: 0.38rem 0 0; max-height: 4.6rem; overflow: auto; color: var(--muted); font-size: 0.7rem; line-height: 1.55; }
+.shot-inspector { margin-top: 1rem; overflow: hidden; background: oklch(0.185 0.042 247 / 0.82); border: 1px solid var(--line); border-radius: 0.8rem; }
+.inspector-heading { padding: 0.9rem 1rem; display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--line); }
+.inspector-heading span { color: var(--teal); font: 0.6rem ui-monospace, monospace; letter-spacing: 0.1em; }
+.inspector-heading h3 { margin: 0.28rem 0 0; font-size: 1rem; }
+.inspector-heading small { color: var(--muted); font: 0.61rem ui-monospace, monospace; text-align: right; }
+.inspector-grid { padding: 1rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+.inspector-grid .wide { grid-column: 1 / -1; }
+.inspector-grid textarea { min-height: 4.9rem; }
+.inspector-actions { padding: 0.8rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--line); }
+.inspector-actions > span { color: var(--muted); font: 0.62rem ui-monospace, monospace; }
 
 .asset-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; }
 .asset-panel-heading h2 { margin: 0.45rem 0 0; font-size: 1.5rem; }
@@ -191,6 +245,7 @@
   .studio-layout { grid-template-columns: 15rem minmax(0, 1fr); }
   .asset-panel { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; }
   .entity-groups { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .studio-actions .ghost { display: none; }
 }
 
 @media (max-width: 820px) {
@@ -207,12 +262,13 @@
   .studio-topbar { padding: 0.8rem 1rem; }
   .studio-actions .ghost { display: none; }
   .studio-button { padding-inline: 0.7rem; font-size: 0.72rem; }
-  .episode-nav, .entity-groups, .shot-inspector { grid-template-columns: 1fr; }
+  .episode-nav, .entity-groups, .inspector-grid { grid-template-columns: 1fr; }
+  .inspector-grid .wide { grid-column: auto; }
   .studio-main-header { align-items: flex-start; flex-direction: column; }
   .shot-card { grid-template-columns: 2.4rem minmax(0, 1fr); }
   .shot-status { display: none; }
-  .shot-inspector > div { border-right: 0; border-bottom: 1px solid var(--line) !important; }
-  .shot-inspector > div:last-child { border-bottom: 0 !important; }
+  .inspector-heading, .inspector-actions { align-items: flex-start; flex-direction: column; }
+  .inspector-actions button { width: 100%; }
   .topbar-actions .mode-switch { font-size: 0.7rem; }
 }
 

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CreativeEntity, ProjectSpec, ShotSpec } from '@onecrew/contracts';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import type { CreativeEntity, EpisodeSpec, ProjectSpec, ShotSpec } from '@onecrew/contracts';
 import {
   Background,
   Controls,
@@ -12,14 +12,62 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import {
+  downloadCreativeProject,
   getCreativeProject,
   importCreativeArchive,
   listCreativeProjects,
+  updateCreativeEpisode,
+  updateCreativeShot,
   type CreativeProjectResponse,
 } from './creative-api.js';
 import './studio.css';
 
 type StudioView = 'storyboards' | 'canvas';
+type SaveState = 'idle' | 'saving' | 'saved';
+
+interface EpisodeDraft {
+  title: string;
+  description: string;
+  scriptContent: string;
+  durationSec: string;
+}
+
+interface ShotDraft {
+  title: string;
+  action: string;
+  camera: string;
+  dialogueZh: string;
+  narrationZh: string;
+  imagePrompt: string;
+  videoPrompt: string;
+  negativePrompt: string;
+  durationSec: string;
+  continuityNotes: string;
+}
+
+function episodeDraft(episode: EpisodeSpec | undefined): EpisodeDraft {
+  return {
+    title: episode?.title ?? '',
+    description: episode?.description ?? '',
+    scriptContent: episode?.scriptContent ?? '',
+    durationSec: String(episode?.durationSec ?? 0),
+  };
+}
+
+function shotDraft(shot: ShotSpec | undefined): ShotDraft {
+  return {
+    title: shot?.title ?? '',
+    action: shot?.action ?? '',
+    camera: shot?.camera ?? '',
+    dialogueZh: shot?.dialogueZh ?? '',
+    narrationZh: shot?.narrationZh ?? '',
+    imagePrompt: shot?.imagePrompt ?? shot?.prompt ?? '',
+    videoPrompt: shot?.videoPrompt ?? '',
+    negativePrompt: shot?.negativePrompt ?? '',
+    durationSec: String(shot?.durationSec ?? 1),
+    continuityNotes: shot?.continuity?.notes ?? '',
+  };
+}
 
 export interface StudioAppProps {
   onOpenReview(): void;
@@ -40,7 +88,7 @@ function flowGraph(shots: ShotSpec[], selectedShotId: string | undefined): { nod
       label: (
         <div className="flow-node-content">
           <span>SHOT {String(shot.sequence).padStart(3, '0')}</span>
-          <strong>{shot.title ?? shot.action}</strong>
+          <strong>{shot.title?.trim() || shot.action}</strong>
           <small>{shot.durationSec}s · {shot.shotType ?? shot.camera}</small>
         </div>
       ),
@@ -67,6 +115,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [view, setView] = useState<StudioView>('storyboards');
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [episodeSave, setEpisodeSave] = useState<SaveState>('idle');
+  const [shotSave, setShotSave] = useState<SaveState>('idle');
+  const [episodeForm, setEpisodeForm] = useState<EpisodeDraft>(() => episodeDraft(undefined));
+  const [shotForm, setShotForm] = useState<ShotDraft>(() => shotDraft(undefined));
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -109,7 +162,18 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     [bundle, selectedEpisodeId],
   );
   const selectedShot = (bundle?.shots ?? []).find((shot) => shot.shotId === selectedShotId);
+  const selectedEpisode = episodes.find((episode) => episode.episodeId === selectedEpisodeId);
   const graph = useMemo(() => flowGraph(episodeShots, selectedShotId), [episodeShots, selectedShotId]);
+
+  useEffect(() => {
+    setEpisodeForm(episodeDraft(selectedEpisode));
+    setEpisodeSave('idle');
+  }, [selectedProjectId, selectedEpisodeId]);
+
+  useEffect(() => {
+    setShotForm(shotDraft(selectedShot));
+    setShotSave('idle');
+  }, [selectedProjectId, selectedShotId]);
 
   const handleImport = async (file: File | undefined) => {
     if (!file) return;
@@ -123,6 +187,108 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
     } finally {
       setImporting(false);
       if (fileInput.current) fileInput.current.value = '';
+    }
+  };
+
+  const handleExport = async () => {
+    if (!selectedProjectId) return;
+    setExporting(true);
+    setError(undefined);
+    try {
+      await downloadCreativeProject(selectedProjectId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  function changeEpisodeField<Field extends keyof EpisodeDraft>(field: Field, value: EpisodeDraft[Field]) {
+    setEpisodeForm((draft) => ({ ...draft, [field]: value }));
+    setEpisodeSave('idle');
+  }
+
+  function changeShotField<Field extends keyof ShotDraft>(field: Field, value: ShotDraft[Field]) {
+    setShotForm((draft) => ({ ...draft, [field]: value }));
+    setShotSave('idle');
+  }
+
+  const handleEpisodeSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!project || !selectedEpisode) return;
+    const expectedVersion = project.versions.episodes[selectedEpisode.episodeId];
+    if (!expectedVersion) return setError('无法读取当前剧集版本，请刷新页面。');
+    setEpisodeSave('saving');
+    setError(undefined);
+    try {
+      const result = await updateCreativeEpisode(selectedEpisode.episodeId, expectedVersion, {
+        title: episodeForm.title.trim(),
+        description: episodeForm.description,
+        scriptContent: episodeForm.scriptContent,
+        durationSec: Number(episodeForm.durationSec),
+      });
+      setProject((current) => current ? {
+        ...current,
+        bundle: {
+          ...current.bundle,
+          episodes: current.bundle.episodes.map((episode) => episode.episodeId === result.record.episodeId ? result.record : episode),
+        },
+        versions: { ...current.versions, episodes: { ...current.versions.episodes, [result.record.episodeId]: result.version } },
+      } : current);
+      setEpisodeSave('saved');
+    } catch (reason) {
+      setEpisodeSave('idle');
+      setError(`${reason instanceof Error ? reason.message : String(reason)}；已重新读取服务端版本。`);
+      const latest = await getCreativeProject(selectedEpisode.projectId).catch(() => undefined);
+      if (latest) {
+        setProject(latest);
+        setEpisodeForm(episodeDraft(latest.bundle.episodes.find((episode) => episode.episodeId === selectedEpisode.episodeId)));
+      }
+    }
+  };
+
+  const handleShotSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!project || !selectedShot) return;
+    const expectedVersion = project.versions.shots[selectedShot.shotId];
+    if (!expectedVersion) return setError('无法读取当前分镜版本，请刷新页面。');
+    const continuityBase = { ...(selectedShot.continuity ?? { characters: {} }) };
+    delete continuityBase.notes;
+    setShotSave('saving');
+    setError(undefined);
+    try {
+      const result = await updateCreativeShot(selectedShot.shotId, expectedVersion, {
+        title: shotForm.title,
+        action: shotForm.action,
+        camera: shotForm.camera,
+        dialogueZh: shotForm.dialogueZh,
+        narrationZh: shotForm.narrationZh,
+        imagePrompt: shotForm.imagePrompt,
+        videoPrompt: shotForm.videoPrompt,
+        negativePrompt: shotForm.negativePrompt,
+        durationSec: Number(shotForm.durationSec),
+        continuity: {
+          ...continuityBase,
+          ...(shotForm.continuityNotes.trim() ? { notes: shotForm.continuityNotes } : {}),
+        },
+      });
+      setProject((current) => current ? {
+        ...current,
+        bundle: {
+          ...current.bundle,
+          shots: current.bundle.shots.map((shot) => shot.shotId === result.record.shotId ? result.record : shot),
+        },
+        versions: { ...current.versions, shots: { ...current.versions.shots, [result.record.shotId]: result.version } },
+      } : current);
+      setShotSave('saved');
+    } catch (reason) {
+      setShotSave('idle');
+      setError(`${reason instanceof Error ? reason.message : String(reason)}；已重新读取服务端版本。`);
+      const latest = await getCreativeProject(selectedShot.projectId).catch(() => undefined);
+      if (latest) {
+        setProject(latest);
+        setShotForm(shotDraft(latest.bundle.shots.find((shot) => shot.shotId === selectedShot.shotId)));
+      }
     }
   };
 
@@ -156,6 +322,14 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
           <button className="studio-button primary" type="button" disabled={importing} onClick={() => fileInput.current?.click()}>
             {importing ? '正在导入…' : '导入工程 ZIP'}
           </button>
+          <button
+            className="studio-button export"
+            type="button"
+            disabled={!selectedProjectId || exporting}
+            onClick={() => void handleExport()}
+          >
+            {exporting ? '正在打包…' : '导出 OneCrew 工程'}
+          </button>
           <button className="studio-button ghost" type="button" onClick={onOpenReview}>打开审片</button>
         </div>
       </header>
@@ -166,7 +340,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
         <aside className="studio-sidebar" aria-label="剧集导航">
           <div className="studio-eyebrow">PROJECT / EPISODES</div>
           <h1>{bundle?.project.nameZh ?? '创作工程'}</h1>
-          <p className="studio-synopsis">{bundle?.project.synopsis ?? '导入 LocalMiniDrama 工程，或从 API 创建一个新的 OneCrew 创作项目。'}</p>
+          <p className="studio-synopsis">{bundle?.project.synopsis ?? '导入创作工程，或从 API 创建一个新的 OneCrew 创作项目。'}</p>
 
           <dl className="studio-stats">
             <div><dt>剧集</dt><dd>{episodes.length}</dd></div>
@@ -195,6 +369,59 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
               );
             })}
           </nav>
+
+          {selectedEpisode && (
+            <form className="episode-editor" onSubmit={(event) => void handleEpisodeSave(event)}>
+              <div className="editor-heading">
+                <div><span>EPISODE SCRIPT</span><strong>剧本编辑</strong></div>
+                <small>v{project?.versions.episodes[selectedEpisode.episodeId] ?? '—'}</small>
+              </div>
+              <label>
+                <span>剧集标题</span>
+                <input
+                  required
+                  maxLength={300}
+                  value={episodeForm.title}
+                  onChange={(event) => changeEpisodeField('title', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>剧情概要</span>
+                <textarea
+                  rows={2}
+                  maxLength={10_000}
+                  value={episodeForm.description}
+                  onChange={(event) => changeEpisodeField('description', event.target.value)}
+                />
+              </label>
+              <label>
+                <span>剧本正文</span>
+                <textarea
+                  className="script-textarea"
+                  rows={8}
+                  maxLength={200_000}
+                  value={episodeForm.scriptContent}
+                  onChange={(event) => changeEpisodeField('scriptContent', event.target.value)}
+                />
+              </label>
+              <div className="editor-footer">
+                <label>
+                  <span>时长 /秒</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="7200"
+                    step="0.1"
+                    value={episodeForm.durationSec}
+                    onChange={(event) => changeEpisodeField('durationSec', event.target.value)}
+                  />
+                </label>
+                <button type="submit" disabled={episodeSave === 'saving'}>
+                  {episodeSave === 'saving' ? '保存中…' : episodeSave === 'saved' ? '已保存 ✓' : '保存剧本'}
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="studio-boundary-note">
             <span aria-hidden="true">✓</span>
@@ -231,7 +458,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
                   <span className="shot-number">{String(shot.sequence).padStart(3, '0')}</span>
                   <span className="shot-copy">
                     <small>{shot.shotType ?? '镜头'} · {shot.durationSec}s</small>
-                    <strong>{shot.title ?? shot.action}</strong>
+                    <strong>{shot.title?.trim() || shot.action}</strong>
                     <span>{shot.camera}</span>
                   </span>
                   <span className={`shot-status ${shot.status}`}>{shot.status}</span>
@@ -263,12 +490,63 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
           )}
 
           {selectedShot && (
-            <section className="shot-inspector" aria-label="当前分镜详情">
-              <div><span>动作</span><p>{selectedShot.action}</p></div>
-              <div><span>生成提示词</span><p>{selectedShot.imagePrompt ?? selectedShot.prompt}</p></div>
-              <div><span>连续性</span><p>{selectedShot.continuity?.notes ?? '等待上一镜连续性快照'}</p></div>
-              <div><span>参考资产</span><p>{selectedShot.referenceAssetIds.length} 个 · 首帧 {selectedShot.firstFrameAssetId ? '已绑定' : '未绑定'}</p></div>
-            </section>
+            <form className="shot-inspector" aria-label="当前分镜编辑" onSubmit={(event) => void handleShotSave(event)}>
+              <div className="inspector-heading">
+                <div>
+                  <span>SHOT {String(selectedShot.sequence).padStart(3, '0')} / EDITOR</span>
+                  <h3>分镜参数</h3>
+                </div>
+                <small>v{project?.versions.shots[selectedShot.shotId] ?? '—'} · {selectedShot.referenceAssetIds.length} 个参考资产</small>
+              </div>
+              <div className="inspector-grid">
+                <label>
+                  <span>分镜标题</span>
+                  <input value={shotForm.title} maxLength={500} onChange={(event) => changeShotField('title', event.target.value)} />
+                </label>
+                <label>
+                  <span>时长 /秒</span>
+                  <input type="number" min="0.1" max="120" step="0.1" required value={shotForm.durationSec} onChange={(event) => changeShotField('durationSec', event.target.value)} />
+                </label>
+                <label className="wide">
+                  <span>画面动作</span>
+                  <textarea rows={3} required maxLength={5_000} value={shotForm.action} onChange={(event) => changeShotField('action', event.target.value)} />
+                </label>
+                <label className="wide">
+                  <span>镜头语言</span>
+                  <input required maxLength={1_000} value={shotForm.camera} onChange={(event) => changeShotField('camera', event.target.value)} />
+                </label>
+                <label>
+                  <span>对白</span>
+                  <textarea rows={3} maxLength={5_000} value={shotForm.dialogueZh} onChange={(event) => changeShotField('dialogueZh', event.target.value)} />
+                </label>
+                <label>
+                  <span>旁白</span>
+                  <textarea rows={3} maxLength={5_000} value={shotForm.narrationZh} onChange={(event) => changeShotField('narrationZh', event.target.value)} />
+                </label>
+                <label className="wide">
+                  <span>图像提示词</span>
+                  <textarea rows={4} maxLength={20_000} value={shotForm.imagePrompt} onChange={(event) => changeShotField('imagePrompt', event.target.value)} />
+                </label>
+                <label className="wide">
+                  <span>视频提示词</span>
+                  <textarea rows={3} maxLength={20_000} value={shotForm.videoPrompt} onChange={(event) => changeShotField('videoPrompt', event.target.value)} />
+                </label>
+                <label>
+                  <span>负向提示词</span>
+                  <textarea rows={3} maxLength={5_000} value={shotForm.negativePrompt} onChange={(event) => changeShotField('negativePrompt', event.target.value)} />
+                </label>
+                <label>
+                  <span>连续性备注</span>
+                  <textarea rows={3} maxLength={4_000} value={shotForm.continuityNotes} onChange={(event) => changeShotField('continuityNotes', event.target.value)} />
+                </label>
+              </div>
+              <div className="inspector-actions">
+                <span>首帧 {selectedShot.firstFrameAssetId ? '已绑定' : '未绑定'} · 尾帧 {selectedShot.lastFrameAssetId ? '已绑定' : '未绑定'}</span>
+                <button type="submit" disabled={shotSave === 'saving'}>
+                  {shotSave === 'saving' ? '保存中…' : shotSave === 'saved' ? '已保存 ✓' : '保存分镜'}
+                </button>
+              </div>
+            </form>
           )}
         </section>
 

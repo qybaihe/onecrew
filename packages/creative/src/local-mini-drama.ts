@@ -720,6 +720,7 @@ export async function materializeCreativeArchive(
       model: 'local-mini-drama-project-1.4',
       source: `${bundle.source.reference ?? 'LocalMiniDrama'}:${media.sourcePath}`,
       license: bundle.source.license ?? 'MIT',
+      creativeRole: media.role,
       contentHash: hash(bytes.toString('base64')),
       status: 'draft',
       createdAt: now,

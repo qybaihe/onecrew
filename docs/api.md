@@ -20,9 +20,14 @@ GET  /v1/creative/projects
 GET  /v1/creative/projects/:projectId
 POST /v1/creative/imports/local-mini-drama/json
 POST /v1/creative/imports/local-mini-drama/zip
+POST /v1/creative/imports/onecrew/zip
+PATCH /v1/creative/episodes/:episodeId
+PATCH /v1/creative/shots/:shotId
+GET  /v1/creative/projects/:projectId/exports/onecrew.zip
+GET  /v1/creative/projects/:projectId/exports/compatible.zip
 ```
 
-列表接口返回已包含剧集的创作项目。项目详情返回完整 `CreativeProjectBundle` 和该项目的版本化 `AssetRecord`，包括剧集、角色、场景、道具、分镜、首尾帧提示词、连续性快照和媒体绑定。
+列表接口返回已包含剧集的创作项目。项目详情返回完整 `CreativeProjectBundle`、该项目的版本化 `AssetRecord` 和 `versions`。`versions` 包含项目、剧集、角色/场景/道具、分镜与帧提示词当前版本，供界面执行乐观并发控制。
 
 JSON 导入用于迁移结构化工程数据：
 
@@ -47,6 +52,70 @@ curl --request POST \
 ```
 
 ZIP 根目录必须包含 `project.json`。导入器限制条目数量、单文件大小和总解压大小，拒绝绝对路径、路径穿越与缺失的声明媒体；校验通过后，业务数据在一个 PostgreSQL 事务中写入，媒体进入受控 S3/MinIO，并生成含来源、哈希、许可证和绑定关系的 `AssetRecord`。项目 ID 冲突返回 409，不会覆盖已有项目。
+
+OneCrew 原生工程导入同样接收 `application/zip` 原始请求体：
+
+```bash
+curl --request POST \
+  http://127.0.0.1:3000/v1/creative/imports/onecrew/zip \
+  --header 'Content-Type: application/zip' \
+  --data-binary '@my-project.onecrew.zip'
+```
+
+原生包必须包含 `onecrew-project.json`。导入会校验声明文件、唯一路径、解压限额和每个媒体的 SHA-256，并拒绝任何未声明文件。原生导入保留工程 ID，如数据库中已存在同 ID 项目则返回 409。
+
+### 编辑剧集和分镜
+
+两个 PATCH 端点都要求当前 `expectedVersion`、每次操作唯一的 `editId` 和 `actorOpenId`。剧集例子：
+
+```bash
+curl --request PATCH \
+  http://127.0.0.1:3000/v1/creative/episodes/episode_demo_01 \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "expectedVersion": 1,
+    "editId": "studio_edit_episode_001",
+    "actorOpenId": "ou_local_studio",
+    "patch": {
+      "title": "第一集：星门开启",
+      "scriptContent": "角色跨过星门。",
+      "durationSec": 36
+    }
+  }'
+```
+
+分镜例子：
+
+```bash
+curl --request PATCH \
+  http://127.0.0.1:3000/v1/creative/shots/shot_demo_001 \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "expectedVersion": 1,
+    "editId": "studio_edit_shot_001",
+    "actorOpenId": "ou_local_studio",
+    "patch": {
+      "action": "角色穿过星门，光线沿披风边缘流动。",
+      "camera": "低机位缓慢跟拍",
+      "continuity": {
+        "characters": {},
+        "notes": "保持角色朝向和银白边缘光。"
+      }
+    }
+  }'
+```
+
+成功响应返回新记录和增加后的 `version`，并在同一数据库事务写入审计日志。过期版本返回 HTTP 409 和当前实际版本信息。
+
+### 导出工程
+
+```bash
+curl --fail --location \
+  http://127.0.0.1:3000/v1/creative/projects/prj_demo/exports/onecrew.zip \
+  --output prj_demo.onecrew.zip
+```
+
+原生导出包含完整创作契约、版本化资产元数据与受控媒体。`compatible.zip` 端点用于需要 1.4 格式互操的迁移工具。
 
 ## Provider 异步任务
 

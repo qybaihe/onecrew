@@ -1,6 +1,7 @@
 import { loadEnv } from '@onecrew/config';
 import { creativeProjectBundleSchema, projectSpecSchema } from '@onecrew/contracts';
 import { createInputHash, InvalidStateTransitionError, VersionConflictError } from '@onecrew/domain';
+import { eq } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createDatabase } from '../src/client.js';
@@ -8,6 +9,7 @@ import {
   createRepositories,
   IdempotencyConflictError,
 } from '../src/repositories.js';
+import { auditLogs } from '../src/schema.js';
 
 const env = loadEnv({ ...process.env, NODE_ENV: 'test' });
 const client = createDatabase(env.DATABASE_URL);
@@ -136,6 +138,37 @@ describe('PostgreSQL repositories', () => {
     expect(restored.entities.map((entity) => entity.kind).sort()).toEqual(['character', 'scene']);
     expect(restored.shots[0]).toMatchObject({ shotId, episodeId, sceneId });
     expect(restored.framePrompts[0]).toMatchObject({ framePromptId, frameType: 'first' });
+
+    const versions = await repositories.creative.getRecordVersions(projectId);
+    expect(versions).toMatchObject({ project: 1, episodes: { [episodeId]: 1 }, shots: { [shotId]: 1 } });
+    const editedEpisode = await repositories.creative.updateEpisode(
+      episodeId,
+      1,
+      { title: '第一集：星门开启', scriptContent: '角色跨过星门。' },
+      { editId: `edit_episode_${suffix}`, actorOpenId: 'ou_studio_editor' },
+    );
+    expect(editedEpisode).toMatchObject({ value: { title: '第一集：星门开启' }, version: 2 });
+    const editedShot = await repositories.creative.updateShot(
+      shotId,
+      1,
+      { action: '角色跨过星门。', camera: '缓慢跟拍' },
+      { editId: `edit_shot_${suffix}`, actorOpenId: 'ou_studio_editor' },
+    );
+    expect(editedShot).toMatchObject({ value: { action: '角色跨过星门。', camera: '缓慢跟拍' }, version: 2 });
+    await expect(
+      repositories.creative.updateShot(
+        shotId,
+        1,
+        { action: '这是一次过期编辑。' },
+        { editId: `edit_shot_stale_${suffix}`, actorOpenId: 'ou_studio_editor' },
+      ),
+    ).rejects.toBeInstanceOf(VersionConflictError);
+    const creativeAudit = await client.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.projectId, projectId));
+    expect(creativeAudit.map((row) => row.action).sort()).toEqual(['update_episode', 'update_shot']);
+    expect(creativeAudit.every((row) => row.source === 'creative_studio' && row.outcome === 'accepted')).toBe(true);
   });
 
   it('persists a project and enforces legal, optimistic transitions', async () => {
