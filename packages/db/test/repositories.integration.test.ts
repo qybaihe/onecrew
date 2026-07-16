@@ -1,13 +1,24 @@
 import { loadEnv } from '@onecrew/config';
-import { projectSpecSchema } from '@onecrew/contracts';
+import {
+  assetRecordSchema,
+  creativeGenerationBatchSchema,
+  creativeProjectBundleSchema,
+  creativeWorkflowGroupSchema,
+  projectSpecSchema,
+  shotSpecSchema,
+} from '@onecrew/contracts';
 import { createInputHash, InvalidStateTransitionError, VersionConflictError } from '@onecrew/domain';
+import { eq } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createDatabase } from '../src/client.js';
 import {
   createRepositories,
   IdempotencyConflictError,
+  InvalidCreativeAssetBindingError,
+  InvalidCreativeWorkflowGroupError,
 } from '../src/repositories.js';
+import { auditLogs } from '../src/schema.js';
 
 const env = loadEnv({ ...process.env, NODE_ENV: 'test' });
 const client = createDatabase(env.DATABASE_URL);
@@ -19,6 +30,476 @@ afterAll(async () => {
 });
 
 describe('PostgreSQL repositories', () => {
+  it('persists reusable shot workflow groups and links their latest generation batch', async () => {
+    const projectId = `prj_workflow_group_${suffix}`;
+    const foreignProjectId = `prj_workflow_group_foreign_${suffix}`;
+    const shotIds = [`shot_workflow_group_a_${suffix}`, `shot_workflow_group_b_${suffix}`];
+    const foreignShotId = `shot_workflow_group_foreign_${suffix}`;
+    const makeProject = (id: string) => projectSpecSchema.parse({
+      projectId: id,
+      nameZh: id === projectId ? '镜头工作流组测试' : '外部工程',
+      nameEn: id,
+      synopsis: '验证镜头组持久化、续跑与项目边界。',
+      audience: '开发测试',
+      genres: ['test'],
+      ownerOpenId: 'ou_workflow_group_owner',
+      locales: ['zh-CN'],
+      aspectRatios: ['16:9'],
+      budgetLimitCny: 1,
+      status: 'draft',
+    });
+    await repositories.projects.create(makeProject(projectId));
+    await repositories.projects.create(makeProject(foreignProjectId));
+    const makeShot = (shotId: string, ownerProjectId: string, sequence: number) => shotSpecSchema.parse({
+      shotId,
+      projectId: ownerProjectId,
+      episodeId: `episode_${ownerProjectId}`,
+      sequence,
+      durationSec: 6,
+      characters: [],
+      sceneId: `scene_${ownerProjectId}`,
+      action: `镜头 ${sequence}`,
+      camera: '固定',
+      prompt: `shot ${sequence}`,
+      referenceAssetIds: [],
+      importance: 'normal',
+      closeupDialogue: false,
+      status: 'planned',
+    });
+    await repositories.shots.create(makeShot(shotIds[0]!, projectId, 1));
+    await repositories.shots.create(makeShot(shotIds[1]!, projectId, 2));
+    await repositories.shots.create(makeShot(foreignShotId, foreignProjectId, 1));
+
+    const now = new Date().toISOString();
+    const group = creativeWorkflowGroupSchema.parse({
+      groupId: `group_workflow_${suffix}`,
+      projectId,
+      name: '主线动作镜头',
+      description: '只补齐缺失的主线镜头素材。',
+      shotIds,
+      generationKind: 'image',
+      missingOnly: true,
+      concurrency: 2,
+      createdBy: 'ou_workflow_group_editor',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await expect(repositories.creativeWorkflowGroups.create(group)).resolves.toMatchObject({
+      value: { groupId: group.groupId, shotIds },
+      version: 1,
+      replayed: false,
+    });
+    await expect(repositories.creativeWorkflowGroups.create(group)).resolves.toMatchObject({
+      version: 1,
+      replayed: true,
+    });
+    await expect(repositories.creativeWorkflowGroups.create({ ...group, name: '复用冲突' }))
+      .rejects.toBeInstanceOf(IdempotencyConflictError);
+    await expect(repositories.creativeWorkflowGroups.create({
+      ...group,
+      groupId: `group_workflow_invalid_${suffix}`,
+      name: '跨项目镜头',
+      shotIds: [foreignShotId],
+    })).rejects.toBeInstanceOf(InvalidCreativeWorkflowGroupError);
+
+    const batch = creativeGenerationBatchSchema.parse({
+      batchId: `batch_workflow_${suffix}`,
+      projectId,
+      kind: 'image',
+      status: 'running',
+      missingOnly: true,
+      route: 'primary',
+      generationNonce: 1,
+      concurrency: 2,
+      items: shotIds.map((shotId) => ({
+        shotId,
+        expectedVersion: 1,
+        status: 'queued' as const,
+        outputAssetIds: [],
+        retryCount: 0,
+      })),
+      inputHash: createInputHash({ projectId, shotIds }),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await repositories.creativeGenerationBatches.create(batch, `workflow_batch_${suffix}`);
+    const attached = await repositories.creativeWorkflowGroups.attachBatch(group.groupId, 1, batch.batchId);
+    expect(attached).toMatchObject({
+      value: { groupId: group.groupId, lastBatchId: batch.batchId },
+      version: 2,
+    });
+    await expect(repositories.creativeWorkflowGroups.attachBatch(group.groupId, 1, batch.batchId))
+      .rejects.toBeInstanceOf(VersionConflictError);
+    await expect(repositories.creativeWorkflowGroups.listForProject(projectId)).resolves.toEqual([
+      expect.objectContaining({ value: expect.objectContaining({ groupId: group.groupId }), version: 2 }),
+    ]);
+  });
+
+  it('searches controlled assets globally and reuses one through a project-local lineage alias', async () => {
+    const originProjectId = `prj_library_origin_${suffix}`;
+    const targetProjectId = `prj_library_target_${suffix}`;
+    const originEntityId = `character_library_origin_${suffix}`;
+    const targetEntityId = `character_library_target_${suffix}`;
+    const sourceAssetId = `asset_library_source_${suffix}`;
+    const makeProject = (
+      projectId: string,
+      nameZh: string,
+      entityId: string,
+      referenceAssetIds: string[],
+    ) => creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0', source: { system: 'onecrew' },
+      project: {
+        projectId, nameZh, nameEn: nameZh, synopsis: '全局素材复用测试。', audience: '开发测试',
+        genres: ['test'], ownerOpenId: 'ou_library_owner', locales: ['zh-CN'], aspectRatios: ['16:9'],
+        budgetLimitCny: 1, status: 'draft',
+      },
+      episodes: [{
+        episodeId: `episode_${projectId}`, projectId, episodeNumber: 1, title: '第一集', scriptContent: '',
+        durationSec: 1, characterIds: [entityId], sceneIds: [], propIds: [], status: 'draft',
+      }],
+      entities: [{
+        entityId, projectId, kind: 'character', name: nameZh, referenceAssetIds, extraAssetIds: [],
+        identityAnchors: [], styleTokens: [], colorPalette: [], stages: [], sortOrder: 0, status: 'draft',
+      }],
+      shots: [], framePrompts: [], mediaFiles: [],
+    });
+    await repositories.creative.importBundle(
+      makeProject(originProjectId, '全局图书馆角色', originEntityId, [sourceAssetId]),
+    );
+    await repositories.creative.importBundle(
+      makeProject(targetProjectId, '目标角色', targetEntityId, []),
+    );
+    const createdAt = new Date().toISOString();
+    await repositories.assets.create(assetRecordSchema.parse({
+      assetId: sourceAssetId, projectId: originProjectId, type: 'character', version: 1,
+      uri: `s3://onecrew/library/${sourceAssetId}.png`, provider: 'import', model: 'source',
+      source: 'global library fixture', license: 'fixture', creativeRole: 'character-master',
+      contentHash: 'a'.repeat(64), status: 'draft', createdAt, updatedAt: createdAt,
+    }));
+    const search = await repositories.creative.searchReusableAssets({
+      q: '全局图书馆', kind: 'character', excludeProjectId: targetProjectId,
+    });
+    expect(search).toHaveLength(1);
+    expect(search[0]).toMatchObject({
+      asset: { assetId: sourceAssetId },
+      originProject: { projectId: originProjectId },
+      originEntity: { entityId: originEntityId, name: '全局图书馆角色' },
+    });
+    const input = {
+      entityId: targetEntityId, sourceAssetId, expectedEntityVersion: 1,
+      actorOpenId: 'ou_library_editor', idempotencyKey: `reuse_library_${suffix}`,
+    };
+    const reused = await repositories.creative.reuseAsset(input);
+    expect(reused).toMatchObject({
+      projectId: targetProjectId, entityId: targetEntityId, sourceAssetId, entityVersion: 2, replayed: false,
+    });
+    expect(reused.reusedAssetId).not.toBe(sourceAssetId);
+    const [targetBundle, targetAssets] = await Promise.all([
+      repositories.creative.getBundle(targetProjectId),
+      repositories.creative.listAssets(targetProjectId),
+    ]);
+    expect(targetBundle.entities[0]?.referenceAssetIds).toEqual([reused.reusedAssetId]);
+    expect(targetAssets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        assetId: reused.reusedAssetId,
+        parentAssetId: sourceAssetId,
+        uri: `s3://onecrew/library/${sourceAssetId}.png`,
+        provider: 'import',
+      }),
+    ]));
+    await expect(repositories.creative.reuseAsset(input)).resolves.toMatchObject({
+      entityVersion: 2, replayed: true,
+    });
+    await expect(repositories.creative.reuseAsset({
+      ...input, idempotencyKey: `reuse_library_stale_${suffix}`,
+    })).rejects.toBeInstanceOf(VersionConflictError);
+  });
+
+  it('atomically registers reference-grid tiles and replaces the composite entity binding', async () => {
+    const projectId = `prj_reference_grid_${suffix}`;
+    const entityId = `character_reference_grid_${suffix}`;
+    const sourceAssetId = `asset_reference_grid_source_${suffix}`;
+    await repositories.creative.importBundle(creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0', source: { system: 'onecrew' },
+      project: {
+        projectId, nameZh: '参考图网格测试', nameEn: 'Reference Grid Test', synopsis: '拆分组合参考图。',
+        audience: '开发测试', genres: ['test'], ownerOpenId: 'ou_grid_owner', locales: ['zh-CN'],
+        aspectRatios: ['16:9'], budgetLimitCny: 1, status: 'draft',
+      },
+      episodes: [{
+        episodeId: `episode_reference_grid_${suffix}`, projectId, episodeNumber: 1, title: '参考图测试',
+        scriptContent: '', durationSec: 1, characterIds: [entityId], sceneIds: [], propIds: [], status: 'draft',
+      }],
+      entities: [{
+        entityId, projectId, kind: 'character', name: '云岚', referenceAssetIds: [sourceAssetId], extraAssetIds: [],
+        identityAnchors: [], styleTokens: [], colorPalette: [], stages: [], sortOrder: 0, status: 'draft',
+      }],
+      shots: [], framePrompts: [], mediaFiles: [],
+    }));
+    const createdAt = new Date().toISOString();
+    const source = assetRecordSchema.parse({
+      assetId: sourceAssetId, projectId, type: 'image', version: 1, uri: `s3://onecrew/grid/${sourceAssetId}.png`,
+      provider: 'import', model: 'source', source: 'grid fixture', license: 'fixture', contentHash: '6'.repeat(64),
+      status: 'draft', createdAt, updatedAt: createdAt,
+    });
+    await repositories.assets.create(source);
+    const tiles = Array.from({ length: 4 }, (_, index) => assetRecordSchema.parse({
+      assetId: `asset_reference_grid_tile_${index}_${suffix}`, projectId, type: 'image', version: 1,
+      parentAssetId: sourceAssetId, uri: `s3://onecrew/grid/${sourceAssetId}/tile-${index}.png`,
+      provider: 'onecrew-media', model: 'ffmpeg-grid-v1', source: `tile ${index}`, license: 'fixture',
+      creativeRole: `reference-grid-r${Math.floor(index / 2) + 1}-c${index % 2 + 1}`,
+      contentHash: String(index + 1).repeat(64), status: 'draft', createdAt, updatedAt: createdAt,
+    }));
+    const input = {
+      entityId, sourceAssetId, expectedEntityVersion: 1, rows: 2, columns: 2, actorOpenId: 'ou_grid_editor',
+      idempotencyKey: `reference_grid_${suffix}`, tiles,
+    };
+    await expect(repositories.creative.applyReferenceGrid(input)).resolves.toMatchObject({
+      entityId, sourceAssetId, entityVersion: 2, replayed: false,
+      tileAssetIds: tiles.map((tile) => tile.assetId),
+    });
+    const restored = await repositories.creative.getBundle(projectId);
+    expect(restored.entities[0]?.referenceAssetIds).toEqual(tiles.map((tile) => tile.assetId));
+    await expect(repositories.creative.applyReferenceGrid(input)).resolves.toMatchObject({
+      entityVersion: 2, replayed: true,
+    });
+    await expect(repositories.creative.applyReferenceGrid({
+      ...input, idempotencyKey: `reference_grid_stale_${suffix}`,
+    })).rejects.toBeInstanceOf(VersionConflictError);
+  });
+
+  it('atomically appends a generated story plan, bumps the project version, and replays by Job', async () => {
+    const projectId = `prj_story_append_${suffix}`;
+    const bundle = creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0',
+      source: { system: 'onecrew' },
+      project: {
+        projectId, nameZh: '故事追加测试', nameEn: 'Story Append Test', synopsis: '验证故事计划安全追加。',
+        audience: '开发测试', genres: ['test'], ownerOpenId: 'ou_story_owner', locales: ['zh-CN'],
+        aspectRatios: ['16:9'], budgetLimitCny: 1, totalEpisodes: 1, status: 'draft',
+      },
+      episodes: [{
+        episodeId: `episode_story_existing_${suffix}`, projectId, episodeNumber: 1, title: '序章',
+        scriptContent: '序章。', durationSec: 30, characterIds: [], sceneIds: [], propIds: [], status: 'draft',
+      }],
+      entities: [], shots: [], framePrompts: [], mediaFiles: [],
+    });
+    await repositories.creative.importBundle(bundle);
+    const jobId = `job_story_append_${suffix}`;
+    const entityId = `character_story_append_${suffix}`;
+    const episodeId = `episode_story_append_${suffix}`;
+    const appended = await repositories.creative.appendStoryPlan({
+      projectId,
+      jobId,
+      expectedProjectVersion: 1,
+      actorOpenId: 'ou_story_editor',
+      entities: [{
+        entityId, projectId, kind: 'character', name: '云岚', role: '导航员', identityAnchors: ['青绿披肩'],
+        referenceAssetIds: [], extraAssetIds: [], styleTokens: [], colorPalette: [], stages: [], sortOrder: 0,
+        status: 'draft',
+      }],
+      episodes: [{
+        episodeId, projectId, episodeNumber: 2, title: '星图回响', scriptContent: '云岚抵达星门。', durationSec: 60,
+        characterIds: [entityId], sceneIds: [], propIds: [], status: 'planning',
+      }],
+    });
+    expect(appended).toMatchObject({ projectId, jobId, projectVersion: 2, replayed: false });
+    const restored = await repositories.creative.getBundle(projectId);
+    expect(restored.project.totalEpisodes).toBe(2);
+    expect(restored.episodes.map((episode) => episode.episodeId)).toContain(episodeId);
+    expect(restored.entities.map((entity) => entity.entityId)).toContain(entityId);
+
+    await expect(repositories.creative.appendStoryPlan({
+      projectId,
+      jobId,
+      expectedProjectVersion: 2,
+      actorOpenId: 'ou_story_editor',
+      entities: [],
+      episodes: [],
+    })).resolves.toMatchObject({ projectVersion: 2, replayed: true, episodeIds: [episodeId] });
+
+    await expect(repositories.creative.appendStoryPlan({
+      projectId,
+      jobId: `job_story_stale_${suffix}`,
+      expectedProjectVersion: 1,
+      actorOpenId: 'ou_story_editor',
+      entities: [],
+      episodes: [],
+    })).rejects.toBeInstanceOf(VersionConflictError);
+  });
+
+  it('imports and reads back a complete creative bundle transactionally', async () => {
+    const now = new Date().toISOString();
+    const projectId = `prj_creative_${suffix}`;
+    const episodeId = `episode_creative_${suffix}`;
+    const characterId = `character_creative_${suffix}`;
+    const sceneId = `scene_creative_${suffix}`;
+    const shotId = `shot_creative_${suffix}`;
+    const framePromptId = `frame_creative_${suffix}`;
+    const bundle = creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0',
+      source: { system: 'local-mini-drama', version: '1.4', license: 'MIT', importedAt: now },
+      project: {
+        projectId,
+        nameZh: '创作工程导入测试',
+        nameEn: 'Creative Import Test',
+        synopsis: '验证剧集、素材实体、结构化分镜和帧提示词事务导入。',
+        audience: '开发测试',
+        genres: ['test'],
+        ownerOpenId: 'ou_test_owner',
+        locales: ['zh-CN', 'en-US'],
+        aspectRatios: ['16:9'],
+        budgetLimitCny: 0,
+        totalEpisodes: 1,
+        source: { system: 'local-mini-drama', version: '1.4', license: 'MIT', importedAt: now },
+        status: 'draft',
+      },
+      episodes: [{
+        episodeId,
+        projectId,
+        episodeNumber: 1,
+        title: '第一集',
+        scriptContent: '角色进入星门。',
+        durationSec: 6,
+        characterIds: [characterId],
+        sceneIds: [sceneId],
+        propIds: [],
+        status: 'draft',
+      }],
+      entities: [
+        {
+          entityId: characterId,
+          projectId,
+          kind: 'character',
+          name: '测试角色',
+          identityAnchors: ['银白短发'],
+          styleTokens: [],
+          colorPalette: [],
+          stages: [],
+          referenceAssetIds: [],
+          extraAssetIds: [],
+          sortOrder: 0,
+          status: 'draft',
+        },
+        {
+          entityId: sceneId,
+          projectId,
+          episodeId,
+          kind: 'scene',
+          name: '星门',
+          location: '星门',
+          referenceAssetIds: [],
+          extraAssetIds: [],
+          sortOrder: 0,
+          status: 'draft',
+        },
+      ],
+      shots: [{
+        shotId,
+        projectId,
+        episodeId,
+        sequence: 1,
+        durationSec: 6,
+        characters: [characterId],
+        sceneId,
+        propIds: [],
+        action: '角色进入星门。',
+        camera: '缓慢推进',
+        prompt: 'cinematic stargate',
+        referenceAssetIds: [],
+        framePromptIds: [framePromptId],
+        creationMode: 'classic',
+        importance: 'hero',
+        closeupDialogue: false,
+        status: 'planned',
+      }],
+      framePrompts: [{
+        framePromptId,
+        shotId,
+        frameType: 'first',
+        prompt: '星门前的首帧',
+      }],
+      mediaFiles: [],
+    });
+    const assetId = `asset_creative_${suffix}`;
+    const imported = await repositories.creative.importBundle(bundle, [{
+      assetId,
+      projectId,
+      shotId,
+      type: 'image',
+      version: 1,
+      uri: `https://assets.onecrew.local/${assetId}.png`,
+      provider: 'import',
+      model: 'local-mini-drama-project-1.4',
+      source: 'integration fixture',
+      license: 'MIT',
+      contentHash: createInputHash({ assetId }),
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+    }]);
+
+    expect(imported).toMatchObject({ projectId, episodes: 1, entities: 2, shots: 1, framePrompts: 1, assets: 1 });
+    const restored = await repositories.creative.getBundle(projectId);
+    expect(restored.episodes[0]).toMatchObject({ episodeId, title: '第一集' });
+    expect(restored.entities.map((entity) => entity.kind).sort()).toEqual(['character', 'scene']);
+    expect(restored.shots[0]).toMatchObject({ shotId, episodeId, sceneId });
+    expect(restored.framePrompts[0]).toMatchObject({ framePromptId, frameType: 'first' });
+
+    const versions = await repositories.creative.getRecordVersions(projectId);
+    expect(versions).toMatchObject({ project: 1, episodes: { [episodeId]: 1 }, shots: { [shotId]: 1 } });
+    const editedEpisode = await repositories.creative.updateEpisode(
+      episodeId,
+      1,
+      { title: '第一集：星门开启', scriptContent: '角色跨过星门。' },
+      { editId: `edit_episode_${suffix}`, actorOpenId: 'ou_studio_editor' },
+    );
+    expect(editedEpisode).toMatchObject({ value: { title: '第一集：星门开启' }, version: 2 });
+    const editedShot = await repositories.creative.updateShot(
+      shotId,
+      1,
+      { action: '角色跨过星门。', camera: '缓慢跟拍' },
+      { editId: `edit_shot_${suffix}`, actorOpenId: 'ou_studio_editor' },
+    );
+    expect(editedShot).toMatchObject({ value: { action: '角色跨过星门。', camera: '缓慢跟拍' }, version: 2 });
+    const editedEntity = await repositories.creative.updateEntity(
+      sceneId,
+      1,
+      { name: '远古星门', atmosphere: '静谧而宏大', referenceAssetIds: [assetId] },
+      { editId: `edit_entity_${suffix}`, actorOpenId: 'ou_studio_editor' },
+    );
+    expect(editedEntity).toMatchObject({
+      value: { kind: 'scene', name: '远古星门', referenceAssetIds: [assetId] },
+      version: 2,
+    });
+    await expect(
+      repositories.creative.updateEntity(
+        sceneId,
+        2,
+        { referenceAssetIds: [`asset_outside_${suffix}`] },
+        { editId: `edit_entity_invalid_asset_${suffix}`, actorOpenId: 'ou_studio_editor' },
+      ),
+    ).rejects.toBeInstanceOf(InvalidCreativeAssetBindingError);
+    await expect(
+      repositories.creative.updateShot(
+        shotId,
+        1,
+        { action: '这是一次过期编辑。' },
+        { editId: `edit_shot_stale_${suffix}`, actorOpenId: 'ou_studio_editor' },
+      ),
+    ).rejects.toBeInstanceOf(VersionConflictError);
+    const creativeAudit = await client.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.projectId, projectId));
+    expect(creativeAudit.map((row) => row.action).sort()).toEqual([
+      'update_creative_entity',
+      'update_episode',
+      'update_shot',
+    ]);
+    expect(creativeAudit.every((row) => row.source === 'creative_studio' && row.outcome === 'accepted')).toBe(true);
+  });
+
   it('persists a project and enforces legal, optimistic transitions', async () => {
     const projectId = `prj_repo_${suffix}`;
     const project = projectSpecSchema.parse({
@@ -168,6 +649,51 @@ describe('PostgreSQL repositories', () => {
       value: { status: 'queued' },
       version: 4,
     });
+
+    const batchId = `batch_entities_${suffix}`;
+    const generationBatch = creativeGenerationBatchSchema.parse({
+      batchId,
+      projectId,
+      kind: 'video',
+      status: 'running',
+      missingOnly: true,
+      route: 'primary',
+      generationNonce: 1,
+      concurrency: 3,
+      items: [{
+        shotId,
+        expectedVersion: 2,
+        status: 'queued',
+        jobId,
+        mode: 'mock',
+        provider: 'mock-video-primary',
+        estimatedCostCny: 0,
+        outputAssetIds: [],
+        retryCount: 0,
+      }],
+      inputHash: createInputHash({ projectId, kind: 'video', shotId }),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const createdBatch = await repositories.creativeGenerationBatches.create(
+      generationBatch,
+      `batch:${projectId}:video`,
+    );
+    await expect(
+      repositories.creativeGenerationBatches.getByIdempotency(projectId, `batch:${projectId}:video`),
+    ).resolves.toMatchObject({ value: { batchId, status: 'running' }, version: 1 });
+    await expect(repositories.creativeGenerationBatches.latestForProject(projectId)).resolves.toMatchObject({
+      value: { batchId },
+      version: 1,
+    });
+    await expect(
+      repositories.creativeGenerationBatches.replace(batchId, createdBatch.version, {
+        ...generationBatch,
+        status: 'cancelled',
+        items: generationBatch.items.map((item) => ({ ...item, status: 'cancelled' as const })),
+        updatedAt: new Date().toISOString(),
+      }),
+    ).resolves.toMatchObject({ value: { status: 'cancelled' }, version: 2 });
 
     await expect(
       repositories.qc.create({

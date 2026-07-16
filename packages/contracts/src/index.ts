@@ -81,6 +81,119 @@ const isoTimestampSchema = z.iso.datetime({ offset: true });
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const nonNegativeMoneySchema = z.number().finite().nonnegative();
 
+export const creativeSourceSchema = z.object({
+  system: z.enum(['onecrew', 'local-mini-drama', 'manual', 'import']),
+  version: z.string().min(1).max(80).optional(),
+  reference: z.string().min(1).max(2_000).optional(),
+  license: z.string().min(1).max(200).optional(),
+  importedAt: isoTimestampSchema.optional(),
+});
+
+export const episodeStatusSchema = z.enum(['draft', 'planning', 'ready', 'rendered', 'archived']);
+export const creativeEntityStatusSchema = z.enum(['draft', 'ready', 'archived']);
+export const creativeEntityKindSchema = z.enum(['character', 'scene', 'prop']);
+export const creationModeSchema = z.enum(['classic', 'universal']);
+export const frameTypeSchema = z.enum(['first', 'last', 'key']);
+
+export const continuityCharacterStateSchema = z.object({
+  position: z.string().max(500).optional(),
+  clothing: z.string().max(1_000).optional(),
+  expression: z.string().max(500).optional(),
+  props: z.array(idSchema).default([]),
+});
+
+export const continuitySnapshotSchema = z.object({
+  sourceShotId: idSchema.optional(),
+  characters: z.record(idSchema, continuityCharacterStateSchema).default({}),
+  lighting: z.string().max(1_000).optional(),
+  cameraAxis: z.string().max(500).optional(),
+  notes: z.string().max(4_000).optional(),
+});
+
+export const episodeSpecSchema = z.object({
+  episodeId: idSchema,
+  projectId: idSchema,
+  episodeNumber: z.number().int().positive(),
+  title: z.string().min(1).max(300),
+  description: z.string().max(10_000).optional(),
+  scriptContent: z.string().max(200_000).default(''),
+  durationSec: z.number().finite().nonnegative().max(7_200).default(0),
+  characterIds: z.array(idSchema).default([]),
+  sceneIds: z.array(idSchema).default([]),
+  propIds: z.array(idSchema).default([]),
+  status: episodeStatusSchema.default('draft'),
+  source: creativeSourceSchema.optional(),
+});
+
+const creativeEntityBaseSchema = z.object({
+  entityId: idSchema,
+  projectId: idSchema,
+  episodeId: idSchema.optional(),
+  name: z.string().min(1).max(300),
+  description: z.string().max(10_000).optional(),
+  prompt: z.string().max(20_000).optional(),
+  polishedPrompt: z.string().max(20_000).optional(),
+  negativePrompt: z.string().max(10_000).optional(),
+  referenceAssetIds: z.array(idSchema).default([]),
+  extraAssetIds: z.array(idSchema).default([]),
+  sortOrder: z.number().int().nonnegative().default(0),
+  status: creativeEntityStatusSchema.default('draft'),
+  source: creativeSourceSchema.optional(),
+});
+
+export const characterSpecSchema = creativeEntityBaseSchema.extend({
+  kind: z.literal('character'),
+  role: z.string().max(500).optional(),
+  personality: z.string().max(4_000).optional(),
+  appearance: z.string().max(10_000).optional(),
+  voiceStyle: z.string().max(2_000).optional(),
+  identityAnchors: z.array(z.string().min(1).max(1_000)).default([]),
+  styleTokens: z.array(z.string().min(1).max(500)).default([]),
+  colorPalette: z.array(z.string().min(1).max(100)).default([]),
+  stages: z
+    .array(
+      z.object({
+        stageId: idSchema,
+        name: z.string().min(1).max(200),
+        description: z.string().max(4_000).optional(),
+        clothing: z.string().max(2_000).optional(),
+        referenceAssetIds: z.array(idSchema).default([]),
+      }),
+    )
+    .default([]),
+  providerAssetRef: z.string().max(2_000).optional(),
+});
+
+export const sceneSpecSchema = creativeEntityBaseSchema.extend({
+  kind: z.literal('scene'),
+  location: z.string().min(1).max(500),
+  timeOfDay: z.string().max(200).optional(),
+  atmosphere: z.string().max(2_000).optional(),
+  lightingStyle: z.string().max(2_000).optional(),
+});
+
+export const propSpecSchema = creativeEntityBaseSchema.extend({
+  kind: z.literal('prop'),
+  category: z.string().max(300).optional(),
+});
+
+export const creativeEntitySchema = z.discriminatedUnion('kind', [
+  characterSpecSchema,
+  sceneSpecSchema,
+  propSpecSchema,
+]);
+
+export const framePromptSpecSchema = z.object({
+  framePromptId: idSchema,
+  shotId: idSchema,
+  frameType: frameTypeSchema,
+  prompt: z.string().min(1).max(20_000),
+  description: z.string().max(4_000).optional(),
+  layout: z.string().max(10_000).optional(),
+  boundAssetId: idSchema.optional(),
+  source: creativeSourceSchema.optional(),
+});
+
 export const projectSpecSchema = z.object({
   projectId: idSchema,
   nameZh: z.string().min(1).max(200),
@@ -93,6 +206,10 @@ export const projectSpecSchema = z.object({
   aspectRatios: z.array(aspectRatioSchema).min(1).max(3),
   budgetLimitCny: nonNegativeMoneySchema,
   designSystemId: idSchema.optional(),
+  style: z.string().max(500).optional(),
+  tags: z.array(z.string().min(1).max(100)).optional(),
+  totalEpisodes: z.number().int().positive().optional(),
+  source: creativeSourceSchema.optional(),
   status: projectStatusSchema,
 });
 
@@ -103,16 +220,106 @@ export const shotSpecSchema = z.object({
   durationSec: z.number().positive().max(120),
   characters: z.array(idSchema),
   sceneId: idSchema,
+  episodeId: idSchema.optional(),
+  propIds: z.array(idSchema).optional(),
+  title: z.string().max(500).optional(),
+  description: z.string().max(10_000).optional(),
+  location: z.string().max(500).optional(),
+  timeOfDay: z.string().max(200).optional(),
   action: z.string().min(1).max(5_000),
   camera: z.string().min(1).max(1_000),
   dialogueZh: z.string().max(5_000).optional(),
+  narrationZh: z.string().max(5_000).optional(),
+  atmosphere: z.string().max(2_000).optional(),
+  result: z.string().max(2_000).optional(),
+  shotType: z.string().max(200).optional(),
+  cameraAngle: z
+    .object({
+      horizontal: z.string().max(200).optional(),
+      vertical: z.string().max(200).optional(),
+      side: z.string().max(200).optional(),
+    })
+    .optional(),
+  movement: z.string().max(500).optional(),
+  lightingStyle: z.string().max(1_000).optional(),
+  depthOfField: z.string().max(500).optional(),
   prompt: z.string().min(1).max(10_000),
+  imagePrompt: z.string().max(20_000).optional(),
+  polishedPrompt: z.string().max(20_000).optional(),
+  videoPrompt: z.string().max(20_000).optional(),
   negativePrompt: z.string().max(5_000).optional(),
   referenceAssetIds: z.array(idSchema),
+  framePromptIds: z.array(idSchema).optional(),
+  firstFrameAssetId: idSchema.optional(),
+  lastFrameAssetId: idSchema.optional(),
+  emotion: z.string().max(500).optional(),
+  emotionIntensity: z.number().min(0).max(1).optional(),
+  segmentIndex: z.number().int().nonnegative().optional(),
+  segmentTitle: z.string().max(500).optional(),
+  continuity: continuitySnapshotSchema.optional(),
+  creationMode: creationModeSchema.optional(),
+  universalSegmentText: z.string().max(20_000).optional(),
+  layoutDescription: z.string().max(10_000).optional(),
+  source: creativeSourceSchema.optional(),
   importance: z.enum(['normal', 'hero']),
   closeupDialogue: z.boolean(),
   status: shotStatusSchema,
 });
+
+export const creativeProjectBundleSchema = z
+  .object({
+    bundleVersion: z.literal('1.0'),
+    source: creativeSourceSchema,
+    project: projectSpecSchema,
+    episodes: z.array(episodeSpecSchema).min(1),
+    entities: z.array(creativeEntitySchema),
+    shots: z.array(shotSpecSchema),
+    framePrompts: z.array(framePromptSpecSchema).default([]),
+    mediaFiles: z
+      .array(
+        z.object({
+          sourcePath: z.string().min(1).max(2_000),
+          mediaType: z.enum(['image', 'video', 'audio']),
+          ownerType: z.enum(['entity', 'shot', 'frame']),
+          ownerId: idSchema,
+          role: z.string().min(1).max(200),
+          originalId: z.union([z.string(), z.number()]).optional(),
+        }),
+      )
+      .default([]),
+  })
+  .superRefine((bundle, context) => {
+    const projectId = bundle.project.projectId;
+    const episodeIds = new Set(bundle.episodes.map((episode) => episode.episodeId));
+    const entityIds = new Set(bundle.entities.map((entity) => entity.entityId));
+    const shotIds = new Set(bundle.shots.map((shot) => shot.shotId));
+    for (const [index, episode] of bundle.episodes.entries()) {
+      if (episode.projectId !== projectId) {
+        context.addIssue({ code: 'custom', path: ['episodes', index, 'projectId'], message: 'must match project' });
+      }
+    }
+    for (const [index, entity] of bundle.entities.entries()) {
+      if (entity.projectId !== projectId) {
+        context.addIssue({ code: 'custom', path: ['entities', index, 'projectId'], message: 'must match project' });
+      }
+    }
+    for (const [index, shot] of bundle.shots.entries()) {
+      if (shot.projectId !== projectId) {
+        context.addIssue({ code: 'custom', path: ['shots', index, 'projectId'], message: 'must match project' });
+      }
+      if (shot.episodeId && !episodeIds.has(shot.episodeId)) {
+        context.addIssue({ code: 'custom', path: ['shots', index, 'episodeId'], message: 'must reference an episode' });
+      }
+      if (!entityIds.has(shot.sceneId)) {
+        context.addIssue({ code: 'custom', path: ['shots', index, 'sceneId'], message: 'must reference a scene' });
+      }
+    }
+    for (const [index, frame] of bundle.framePrompts.entries()) {
+      if (!shotIds.has(frame.shotId)) {
+        context.addIssue({ code: 'custom', path: ['framePrompts', index, 'shotId'], message: 'must reference a shot' });
+      }
+    }
+  });
 
 export const designPackManifestSchema = z.object({
   designSystemId: idSchema,
@@ -415,6 +622,7 @@ export const assetRecordSchema = z.object({
   seed: z.string().max(200).optional(),
   source: z.string().min(1).max(2_000),
   license: z.string().min(1).max(2_000),
+  creativeRole: z.string().min(1).max(200).optional(),
   contentHash: sha256Schema,
   status: assetStatusSchema,
   createdAt: isoTimestampSchema,
@@ -769,6 +977,205 @@ export const asyncJobAcceptedSchema = z.object({
   replayed: z.boolean().default(false),
 });
 
+export const creativeGenerationKindSchema = z.enum(['image', 'video']);
+export const creativeGenerationBatchItemStatusSchema = z.enum([
+  'pending',
+  'skipped',
+  'submission_failed',
+  ...jobStatusSchema.options,
+]);
+export const creativeGenerationBatchStatusSchema = z.enum([
+  'submitting',
+  'running',
+  'waiting_human',
+  'succeeded',
+  'partial',
+  'failed',
+  'cancelled',
+]);
+export const creativeGenerationBatchRequestSchema = z
+  .object({
+    kind: creativeGenerationKindSchema,
+    shotIds: z.array(idSchema).min(1).max(100).optional(),
+    expectedVersions: z.record(idSchema, z.number().int().positive()),
+    missingOnly: z.boolean().default(true),
+    route: providerRouteSchema.default('primary'),
+    generationNonce: z.number().int().nonnegative(),
+    concurrency: z.number().int().min(1).max(10).default(3),
+  })
+  .superRefine((value, context) => {
+    if (value.shotIds && new Set(value.shotIds).size !== value.shotIds.length) {
+      context.addIssue({ code: 'custom', path: ['shotIds'], message: 'must not contain duplicates' });
+    }
+  });
+export const creativeGenerationBatchItemSchema = z.object({
+  shotId: idSchema,
+  expectedVersion: z.number().int().positive(),
+  status: creativeGenerationBatchItemStatusSchema,
+  jobId: idSchema.optional(),
+  mode: providerModeSchema.optional(),
+  provider: z.string().min(1).max(200).optional(),
+  estimatedCostCny: nonNegativeMoneySchema.optional(),
+  outputAssetIds: z.array(idSchema).default([]),
+  retryCount: z.number().int().nonnegative().default(0),
+  reason: z.string().min(1).max(4_000).optional(),
+});
+export const creativeGenerationBatchSchema = z.object({
+  batchId: idSchema,
+  projectId: idSchema,
+  kind: creativeGenerationKindSchema,
+  status: creativeGenerationBatchStatusSchema,
+  missingOnly: z.boolean(),
+  route: providerRouteSchema,
+  generationNonce: z.number().int().nonnegative(),
+  concurrency: z.number().int().min(1).max(10),
+  items: z.array(creativeGenerationBatchItemSchema).max(100),
+  inputHash: sha256Schema,
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+});
+
+export const creativeWorkflowGroupSchema = z.object({
+  groupId: idSchema,
+  projectId: idSchema,
+  name: z.string().min(1).max(120),
+  description: z.string().max(2_000).optional(),
+  shotIds: z.array(idSchema).min(1).max(100).refine(
+    (shotIds) => new Set(shotIds).size === shotIds.length,
+    { message: 'shotIds must not contain duplicates' },
+  ),
+  generationKind: creativeGenerationKindSchema,
+  missingOnly: z.boolean(),
+  concurrency: z.number().int().min(1).max(10),
+  createdBy: idSchema,
+  lastBatchId: idSchema.optional(),
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+});
+
+export const creativeWorkflowGroupCreateRequestSchema = creativeWorkflowGroupSchema.pick({
+  name: true,
+  description: true,
+  shotIds: true,
+  generationKind: true,
+  missingOnly: true,
+  concurrency: true,
+  createdBy: true,
+});
+
+export const creativeWorkflowGroupRunRequestSchema = z.object({
+  expectedGroupVersion: z.number().int().positive(),
+  expectedShotVersions: z.record(idSchema, z.number().int().positive()),
+  route: providerRouteSchema.default('primary'),
+  generationNonce: z.number().int().nonnegative(),
+  forceRegenerate: z.boolean().default(false),
+});
+
+export const creativeReferenceGridRequestSchema = z.object({
+  sourceAssetId: idSchema,
+  expectedEntityVersion: z.number().int().positive(),
+  rows: z.number().int().min(1).max(3).default(2),
+  columns: z.number().int().min(1).max(3).default(2),
+  actorOpenId: idSchema,
+}).superRefine((value, context) => {
+  const count = value.rows * value.columns;
+  if (count < 2 || count > 9) {
+    context.addIssue({ code: 'custom', path: ['rows'], message: 'grid must contain between 2 and 9 tiles' });
+  }
+});
+
+export const creativeReferenceGridResultSchema = z.object({
+  projectId: idSchema,
+  entityId: idSchema,
+  sourceAssetId: idSchema,
+  rows: z.number().int().min(1).max(3),
+  columns: z.number().int().min(1).max(3),
+  tileAssetIds: z.array(idSchema).min(2).max(9),
+  entityVersion: z.number().int().positive(),
+  replayed: z.boolean(),
+});
+
+export const creativeReusableAssetSchema = z.object({
+  asset: assetRecordSchema,
+  originProject: z.object({
+    projectId: idSchema,
+    nameZh: z.string().min(1).max(200),
+    nameEn: z.string().min(1).max(200),
+  }),
+  originEntity: z.object({
+    entityId: idSchema,
+    kind: creativeEntityKindSchema,
+    name: z.string().min(1).max(300),
+  }).optional(),
+});
+
+export const creativeReusableAssetReuseRequestSchema = z.object({
+  sourceAssetId: idSchema,
+  expectedEntityVersion: z.number().int().positive(),
+  actorOpenId: idSchema,
+});
+
+export const creativeReusableAssetReuseResultSchema = z.object({
+  projectId: idSchema,
+  entityId: idSchema,
+  sourceAssetId: idSchema,
+  reusedAssetId: idSchema,
+  entityVersion: z.number().int().positive(),
+  replayed: z.boolean(),
+});
+
+export const creativeStoryPlanRequestSchema = z.object({
+  brief: z.string().min(1).max(20_000),
+  episodeCount: z.number().int().min(1).max(12).default(3),
+  route: providerRouteSchema.default('primary'),
+  generationNonce: z.number().int().nonnegative(),
+});
+
+export const creativeStoryPlanSchema = z.object({
+  title: z.string().min(1).max(300),
+  logline: z.string().min(1).max(2_000),
+  episodes: z.array(z.object({
+    title: z.string().min(1).max(300),
+    synopsis: z.string().min(1).max(10_000),
+    scriptContent: z.string().min(1).max(200_000),
+    durationSec: z.number().int().min(15).max(7_200),
+    characterNames: z.array(z.string().min(1).max(300)).max(50),
+    sceneNames: z.array(z.string().min(1).max(300)).max(50),
+    propNames: z.array(z.string().min(1).max(300)).max(50),
+  })).min(1).max(12),
+  characters: z.array(z.object({
+    name: z.string().min(1).max(300),
+    role: z.string().max(500),
+    personality: z.string().max(4_000),
+    appearance: z.string().max(10_000),
+    voiceStyle: z.string().max(2_000),
+    identityAnchors: z.array(z.string().min(1).max(1_000)).max(20),
+  })).max(50),
+  scenes: z.array(z.object({
+    name: z.string().min(1).max(300),
+    description: z.string().max(10_000),
+    location: z.string().min(1).max(500),
+    timeOfDay: z.string().max(200),
+    atmosphere: z.string().max(2_000),
+    lightingStyle: z.string().max(2_000),
+  })).max(50),
+  props: z.array(z.object({
+    name: z.string().min(1).max(300),
+    description: z.string().max(10_000),
+    category: z.string().max(300),
+    prompt: z.string().max(20_000),
+  })).max(50),
+});
+
+export const creativeStoryPlanApplyResultSchema = z.object({
+  projectId: idSchema,
+  jobId: idSchema,
+  projectVersion: z.number().int().positive(),
+  replayed: z.boolean(),
+  episodeIds: z.array(idSchema),
+  entityIds: z.array(idSchema),
+});
+
 export const providerCallbackSchema = z.object({
   eventId: idSchema,
   provider: z.string().min(1).max(200),
@@ -778,6 +1185,14 @@ export const providerCallbackSchema = z.object({
 
 export const contractSchemas = {
   ProjectSpec: projectSpecSchema,
+  EpisodeSpec: episodeSpecSchema,
+  CharacterSpec: characterSpecSchema,
+  SceneSpec: sceneSpecSchema,
+  PropSpec: propSpecSchema,
+  CreativeEntity: creativeEntitySchema,
+  ContinuitySnapshot: continuitySnapshotSchema,
+  FramePromptSpec: framePromptSpecSchema,
+  CreativeProjectBundle: creativeProjectBundleSchema,
   ShotSpec: shotSpecSchema,
   DesignPackManifest: designPackManifestSchema,
   LocalePack: localePackSchema,
@@ -807,6 +1222,19 @@ export const contractSchemas = {
   ProviderJobState: providerJobStateSchema,
   ProviderCallback: providerCallbackSchema,
   AsyncJobAccepted: asyncJobAcceptedSchema,
+  CreativeGenerationBatchRequest: creativeGenerationBatchRequestSchema,
+  CreativeGenerationBatch: creativeGenerationBatchSchema,
+  CreativeWorkflowGroup: creativeWorkflowGroupSchema,
+  CreativeWorkflowGroupCreateRequest: creativeWorkflowGroupCreateRequestSchema,
+  CreativeWorkflowGroupRunRequest: creativeWorkflowGroupRunRequestSchema,
+  CreativeReferenceGridRequest: creativeReferenceGridRequestSchema,
+  CreativeReferenceGridResult: creativeReferenceGridResultSchema,
+  CreativeReusableAsset: creativeReusableAssetSchema,
+  CreativeReusableAssetReuseRequest: creativeReusableAssetReuseRequestSchema,
+  CreativeReusableAssetReuseResult: creativeReusableAssetReuseResultSchema,
+  CreativeStoryPlanRequest: creativeStoryPlanRequestSchema,
+  CreativeStoryPlan: creativeStoryPlanSchema,
+  CreativeStoryPlanApplyResult: creativeStoryPlanApplyResultSchema,
 } as const;
 
 export type Locale = z.infer<typeof localeSchema>;
@@ -814,6 +1242,11 @@ export type AspectRatio = z.infer<typeof aspectRatioSchema>;
 export type ProjectStatus = z.infer<typeof projectStatusSchema>;
 export type ShotStatus = z.infer<typeof shotStatusSchema>;
 export type AssetStatus = z.infer<typeof assetStatusSchema>;
+export type EpisodeStatus = z.infer<typeof episodeStatusSchema>;
+export type CreativeEntityStatus = z.infer<typeof creativeEntityStatusSchema>;
+export type CreativeEntityKind = z.infer<typeof creativeEntityKindSchema>;
+export type CreationMode = z.infer<typeof creationModeSchema>;
+export type FrameType = z.infer<typeof frameTypeSchema>;
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type RenderStatus = z.infer<typeof renderStatusSchema>;
 export type RenderMode = z.infer<typeof renderModeSchema>;
@@ -825,6 +1258,15 @@ export type ExperimentPlatform = z.infer<typeof experimentPlatformSchema>;
 export type Capability = z.infer<typeof capabilitySchema>;
 export type CompositionId = z.infer<typeof compositionIdSchema>;
 export type ProjectSpec = z.infer<typeof projectSpecSchema>;
+export type CreativeSource = z.infer<typeof creativeSourceSchema>;
+export type EpisodeSpec = z.infer<typeof episodeSpecSchema>;
+export type CharacterSpec = z.infer<typeof characterSpecSchema>;
+export type SceneSpec = z.infer<typeof sceneSpecSchema>;
+export type PropSpec = z.infer<typeof propSpecSchema>;
+export type CreativeEntity = z.infer<typeof creativeEntitySchema>;
+export type ContinuitySnapshot = z.infer<typeof continuitySnapshotSchema>;
+export type FramePromptSpec = z.infer<typeof framePromptSpecSchema>;
+export type CreativeProjectBundle = z.infer<typeof creativeProjectBundleSchema>;
 export type ShotSpec = z.infer<typeof shotSpecSchema>;
 export type DesignPackManifest = z.infer<typeof designPackManifestSchema>;
 export type LocalePack = z.infer<typeof localePackSchema>;
@@ -842,6 +1284,23 @@ export type PublishRequest = z.infer<typeof publishRequestSchema>;
 export type PublishRecord = z.infer<typeof publishRecordSchema>;
 export type JobRecord = z.infer<typeof jobRecordSchema>;
 export type AssetRecord = z.infer<typeof assetRecordSchema>;
+export type CreativeGenerationKind = z.infer<typeof creativeGenerationKindSchema>;
+export type CreativeGenerationBatchItemStatus = z.infer<typeof creativeGenerationBatchItemStatusSchema>;
+export type CreativeGenerationBatchStatus = z.infer<typeof creativeGenerationBatchStatusSchema>;
+export type CreativeGenerationBatchRequest = z.infer<typeof creativeGenerationBatchRequestSchema>;
+export type CreativeGenerationBatchItem = z.infer<typeof creativeGenerationBatchItemSchema>;
+export type CreativeGenerationBatch = z.infer<typeof creativeGenerationBatchSchema>;
+export type CreativeWorkflowGroup = z.infer<typeof creativeWorkflowGroupSchema>;
+export type CreativeWorkflowGroupCreateRequest = z.infer<typeof creativeWorkflowGroupCreateRequestSchema>;
+export type CreativeWorkflowGroupRunRequest = z.infer<typeof creativeWorkflowGroupRunRequestSchema>;
+export type CreativeReferenceGridRequest = z.infer<typeof creativeReferenceGridRequestSchema>;
+export type CreativeReferenceGridResult = z.infer<typeof creativeReferenceGridResultSchema>;
+export type CreativeReusableAsset = z.infer<typeof creativeReusableAssetSchema>;
+export type CreativeReusableAssetReuseRequest = z.infer<typeof creativeReusableAssetReuseRequestSchema>;
+export type CreativeReusableAssetReuseResult = z.infer<typeof creativeReusableAssetReuseResultSchema>;
+export type CreativeStoryPlanRequest = z.infer<typeof creativeStoryPlanRequestSchema>;
+export type CreativeStoryPlan = z.infer<typeof creativeStoryPlanSchema>;
+export type CreativeStoryPlanApplyResult = z.infer<typeof creativeStoryPlanApplyResultSchema>;
 export type QCRecord = z.infer<typeof qcRecordSchema>;
 export type TechnicalQcExpectation = z.infer<typeof technicalQcExpectationSchema>;
 export type TechnicalQcReport = z.infer<typeof technicalQcReportSchema>;

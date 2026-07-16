@@ -14,6 +14,9 @@ import {
   BullProviderQueue,
   BullQcQueue,
   BullRenderQueue,
+  CreativeGenerationBatchOrchestrator,
+  CreativeReferenceGridProcessor,
+  CreativeStoryPlanner,
   LocalizationOrchestrator,
   ProductionWorkflow,
   PublishOrchestrator,
@@ -62,6 +65,17 @@ const providerOrchestrator = new ProviderOrchestrator(
   providerGateway,
   providerQueue,
   { softBudgetRatio: env.PROVIDER_SOFT_BUDGET_RATIO },
+);
+const creativeGenerationBatchOrchestrator = new CreativeGenerationBatchOrchestrator(
+  repositories,
+  providerOrchestrator,
+);
+const creativeStoryPlanner = new CreativeStoryPlanner(repositories.creative, providerOrchestrator);
+const creativeReferenceGridProcessor = new CreativeReferenceGridProcessor(
+  repositories.creative,
+  repositories.assets,
+  mediaStore,
+  env.FFMPEG_PATH,
 );
 const providerCallbackProcessor = new ProviderCallbackProcessor(repositories);
 const localizationQueue = new BullLocalizationQueue(env.REDIS_URL);
@@ -237,6 +251,18 @@ const cardActionService = new CardActionService({
 });
 const app = createApp({
   env,
+  creatives: {
+    repository: repositories.creative,
+    mediaStore,
+    shotRepository: repositories.shots,
+    generator: providerOrchestrator,
+    batchGenerator: creativeGenerationBatchOrchestrator,
+    continuityQc: qcOrchestrator,
+    storyPlanner: creativeStoryPlanner,
+    referenceGrid: creativeReferenceGridProcessor,
+    reusableAssets: repositories.creative,
+    workflowGroups: repositories.creativeWorkflowGroups,
+  },
   feishu: {
     security: {
       ...(env.FEISHU_VERIFICATION_TOKEN

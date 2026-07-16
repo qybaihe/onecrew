@@ -3,7 +3,15 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react()],
-  server: { port: 4173, strictPort: true },
+  server: {
+    port: 4173,
+    strictPort: true,
+    proxy: {
+      '/v1': 'http://127.0.0.1:3000',
+      '/healthz': 'http://127.0.0.1:3000',
+      '/readyz': 'http://127.0.0.1:3000',
+    },
+  },
   preview: { host: '127.0.0.1', port: 4173, strictPort: true },
   build: { sourcemap: true },
 });

@@ -1,0 +1,29 @@
+{
+  "name": "@onecrew/creative",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@onecrew/contracts": "workspace:*",
+    "adm-zip": "0.5.16",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "0.5.7"
+  }
+}

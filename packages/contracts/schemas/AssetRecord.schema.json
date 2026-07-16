@@ -81,6 +81,11 @@
       "minLength": 1,
       "maxLength": 2000
     },
+    "creativeRole": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
     "contentHash": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"

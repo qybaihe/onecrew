@@ -98,7 +98,7 @@ flowchart LR
 | 组件 | 唯一职责 | 接入方式 |
 |---|---|---|
 | 飞书开放平台 | 控制、审批、业务数据 | Base API、卡片回调、机器人消息 |
-| LocalMiniDrama 领域模型 | 项目、角色、分镜、资产和生产概念的参考实现 | 借鉴并适配领域结构，不直接复制整套 UI |
+| OneCrew 创作域（吸收 LocalMiniDrama） | 项目、剧集、角色、场景、道具、分镜、首尾帧、素材库和批量生产 | 完整迁移产品能力到 OneCrew 技术栈；允许移植 MIT 代码，但不引入 Vue、SQLite、Electron 或第二套审批工作台 |
 | LangGraph | 长流程、人工暂停、失败重试、恢复与模型路由 | TypeScript 图工作流 |
 | Open Design | 设计风格输入和 Design Pack 编译 | Adapter、文件导入或受控 sidecar API |
 | Remotion | 预览、字幕、动效、正片、宣传片与确定性渲染 | React Composition、Player、Renderer |
@@ -117,6 +117,23 @@ FFmpeg/ffprobe 是媒体基础设施；PostgreSQL、Redis 和 S3 兼容存储是
 - 技术质检：FFmpeg/ffprobe。
 - 测试：Vitest + Playwright。
 - 本地环境：Docker Compose。
+
+### 4.3 ADR-001：完整吸收 LocalMiniDrama 创作能力
+
+**状态：已接受（2026-07-15）**
+
+OneCrew 不再只把 LocalMiniDrama 当作抽象领域参考，而是把它公开版本中已经验证的创作能力纳入产品完成度目标。迁移遵循“能力完整、架构统一、运行边界唯一”的原则：
+
+- 迁移项目、剧集、剧本、角色、场景、道具、结构化分镜、素材库、首尾帧、连续性、生成历史、批量流水线、工程导入导出和画布编排等产品能力。
+- 所有新代码统一进入 OneCrew 的 TypeScript monorepo，使用 Zod/JSON Schema、Fastify、PostgreSQL/Drizzle、Redis/BullMQ、MinIO/S3、React 和 Remotion。
+- 可移植上游 MIT 许可下的纯算法、协议兼容和数据转换代码；凡构成实质复制的文件或片段，都在第三方声明中保留来源、提交号、版权和许可证。
+- 不引入上游的 Vue 3 前端、Express 运行时、SQLite 数据库或 Electron 桌面壳；这些能力用 OneCrew 的组件重写。
+- 不建立第二套审批或业务状态工作台。创作工作台只负责内容生产和素材编辑；审批、放行、切换模型和转人工仍由飞书完成。
+- 不建立第二条正式渲染链路。上游的 FFmpeg 合并经验可用于媒体预处理和检测，所有正式成片与宣传物料仍由 Remotion 渲染。
+- 不把上游的多厂商配置页面原样搬入产品。Provider 继续经过统一 Adapter，每种能力只保留一个首选和一个备用路由，凭证只进入本机环境或 Secret Manager。
+- 飞书六张表保持不变。角色、场景和道具作为资产子类型进入“资产”表；剧集归属和结构化镜头字段进入“项目/分镜”记录及 PostgreSQL 运行模型。
+
+迁移完成度和逐项验收证据由 `docs/localminidrama-adoption.md` 持续维护。该文件是内部工程账本，不用于对外 README 宣传“整合了什么项目”。
 
 ## 5. 组件职责边界
 

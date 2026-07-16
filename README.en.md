@@ -10,7 +10,7 @@ English · [简体中文](./README.md)
 
 OneCrew is a Feishu-controlled, API-driven production system for bilingual Chinese and English AI short dramas and promotional media. It organizes project setup, scripts and storyboards, visual rules, media generation, asset versioning, automated quality control, localization, final rendering, human approval, and publish-package export into a recoverable and auditable pipeline.
 
-Remotion is the only final video renderer. PostgreSQL stores business state, S3/MinIO stores controlled media, Redis/BullMQ runs asynchronous jobs, Feishu is the business control plane, and the local Preview app is read-only.
+Remotion is the only final video renderer. PostgreSQL stores business state, S3/MinIO stores controlled media, and Redis/BullMQ runs asynchronous jobs. Feishu is the only approval control plane, while the local Studio handles project browsing, asset organization, the storyboard canvas, project import, and final review.
 
 > Current version: `0.1.0`. Stages 0–8 have been implemented and verified through a local deterministic Mock end-to-end run. Real model providers, a real Feishu tenant, and direct platform publishing require the operator's own credentials and authorization. Mock results are never presented as real provider output.
 
@@ -18,7 +18,17 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 
 | Area | Capability | Status |
 | --- | --- | --- |
-| Projects and scripts | Projects, characters, script plans, scenes, and a continuous 10-shot storyboard | Implemented |
+| Projects and scripts | Multiple projects and episodes, script plans, character/scene/prop libraries, and structured storyboards | Implemented |
+| Story planning | Generate a requested number of episode stories, scripts, and character/scene/prop definitions from a brief; preview and atomically append | Mock runtime-verified; Real requires credentials |
+| Creative Studio | Script editing, storyboard list/canvas, character/scene/prop editing, asset binding, and final review | Implemented and browser-verified |
+| Multi-reference images | Split 1×2 through 3×3 composite images into controlled assets and map them explicitly to entity/shot references with `@ImageN` semantics | Implemented and runtime-verified |
+| Global asset library | Search controlled character/scene/prop media across projects and create exportable project-local aliases with provenance | Implemented and runtime-verified |
+| Single-shot generation | Generate images/videos from saved shots with entity references, previous-shot tail frames, continuity constraints, and asset version write-back | Mock browser-verified; Real requires credentials |
+| Batch generation | Fill only missing images/videos with durable batch progress, stop, refresh, and failed-item retry controls | Mock browser-verified |
+| Shot workflow groups | Select and persist reusable shot sets across episodes, restore them after reload, and fill missing outputs or regenerate the whole set | Implemented and runtime-verified |
+| Continuity QC | Compile saved character, scene, prop, camera-axis, and tail-frame continuity into the existing FFmpeg/VLM/Feishu review pipeline | Implemented and browser-verified |
+| Project import/export | Import structured JSON or ZIP archives with media; export portable OneCrew archives with SHA-256 integrity data | Implemented and tested |
+| Concurrent editing | Optimistic episode/entity/shot versions, 409 conflict protection, and accepted-edit auditing | Implemented and tested |
 | Design system | Parse Open Design / `DESIGN.md` and compile immutable Design Packs | Implemented |
 | Provider Gateway | Primary/Fallback routing for LLM, VLM, image, video, and TTS providers | Mock verified; Real adapters implemented |
 | Job system | BullMQ queues, idempotency, budget gates, retries, cancellation, and signed callbacks | Implemented and tested |
@@ -34,7 +44,8 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 
 ```mermaid
 flowchart LR
-  A["Feishu / HTTP API"] --> B["Fastify API"]
+  L["Local Creative Studio"] --> B["Fastify API"]
+  A["Feishu / HTTP API"] --> B
   B --> C["PostgreSQL"]
   B --> D["Redis / BullMQ"]
   D --> E["Worker"]
@@ -91,7 +102,7 @@ After startup:
 | --- | --- |
 | `http://127.0.0.1:3000/healthz` | API liveness |
 | `http://127.0.0.1:3000/readyz` | PostgreSQL, Redis, and MinIO readiness |
-| `http://127.0.0.1:4173` | Read-only Remotion Player review page |
+| `http://127.0.0.1:4173` | Creative Studio, storyboard canvas, and Remotion Player review page |
 | `http://127.0.0.1:59001` | Local MinIO administration console |
 
 Verify the environment:
@@ -107,6 +118,28 @@ Stop the local infrastructure with:
 ```bash
 pnpm infra:down
 ```
+
+## Using the Creative Studio
+
+Open `http://127.0.0.1:4173/#studio` to work with a project:
+
+1. switch the active project in the top bar, or import a `.onecrew.zip` / compatible ZIP archive;
+2. enter a creative brief and episode count under **Story Planning**. The asynchronous Job returns a preview of episode stories, scripts, and character/scene/prop definitions. Nothing changes until you click **Write to editable project**; applying is atomic and append-only, so existing episodes and definitions are never replaced;
+3. choose an episode and edit its title, summary, full script, and duration in the left rail;
+4. switch between the storyboard list and React Flow canvas, then select a shot;
+5. edit shot action, camera language, dialogue, narration, image/video prompts, negative prompt, and continuity notes;
+6. select a character, scene, or prop in the right-hand library; edit its common and type-specific fields, then bind versioned assets from the current project as references;
+7. if one image contains multiple angles or designs, choose its source and shape under **Composite reference image**. The Studio uses local FFmpeg to split it into 2–9 PNG assets, writes them to MinIO, and binds them to the current definition in row-major order;
+8. search the **Global asset library** by character/scene/prop name, project, or role. Reusing an item creates a deterministic alias in the current project while preserving its URI, content hash, license, and source `parentAssetId`, so the current project remains independently exportable;
+9. save with the version shown in the editor. If another editor saved first, the stale update receives HTTP 409 and the Studio reloads the current server version instead of silently overwriting it;
+10. after saving the shot, click **Generate storyboard image** or **Generate video**. The Studio follows the asynchronous Job; image requests preserve entity references, the previous shot's tail frame, and continuity notes, and align `@Image1` through `@Image10` with the Provider image array. Video requests prefer the newest image version for the current shot. Successful outputs enter the asset library and link to the previous version through `parentAssetId`;
+11. read the visible `MOCK` or real-provider label. Mock mode is for local development and does not create real media. Real generation requires configured provider credentials and positive prices. Jobs that exceed the project budget enter the human gate instead of spending past the limit;
+12. select shots with the checkbox beside each card, name the set under **Shot workflow groups**, and save it. Groups are durable PostgreSQL records and return after a reload or restart. **Fill missing outputs** skips existing assets, while **Regenerate whole group** creates a new batch; both reuse the existing Provider, budget gate, BullMQ Jobs, and asset-version chain;
+13. use **Fill missing storyboard images/videos** to process every shot without the corresponding asset. Batch records live in PostgreSQL, so the latest progress returns after a page reload. You can stop unfinished Jobs or retry only failed/cancelled items;
+14. click **Run continuity QC** for an image or video already materialized in controlled MinIO/S3. OneCrew derives character identity, clothing, scene, prop, lighting, camera-axis, previous-tail-frame, and temporal-stability checks from the saved shot, then reuses the existing technical QC, VLM, and Feishu human gate. Mock placeholder URIs are never presented as checked media;
+15. click **Export OneCrew Project** to download a complete, re-importable ZIP containing the project, episodes, entities, shots, frame prompts, versioned asset metadata, media, and a SHA-256 for every media file.
+
+The Studio edits content and assets only. Approval, provider switching, and manual handoff still enter through the Feishu control plane so there is only one release-authority path.
 
 ## Split-process development
 
@@ -132,7 +165,7 @@ pnpm start:api
 # Terminal 2: Worker
 pnpm start:worker
 
-# Terminal 3: Preview
+# Terminal 3: Creative Studio and review app
 pnpm preview:dev
 ```
 
@@ -174,6 +207,17 @@ The local API base URL is `http://127.0.0.1:3000`.
 | Purpose | Endpoint |
 | --- | --- |
 | Health | `GET /healthz`, `GET /readyz` |
+| Creative projects | `GET /v1/creative/projects`, `GET /v1/creative/projects/:projectId` |
+| Story planning | `POST /v1/creative/projects/:projectId/story-plans` to generate; `GET .../story-plans/:jobId` to preview; `POST .../story-plans/:jobId/apply` to append |
+| Script/shot editing | `PATCH /v1/creative/episodes/:episodeId`, `PATCH /v1/creative/shots/:shotId` |
+| Composite-reference splitting | `POST /v1/creative/entities/:entityId/reference-grids` |
+| Global asset search/reuse | `GET /v1/creative/reusable-assets`; `POST /v1/creative/entities/:entityId/reusable-assets` |
+| Single-shot image/video generation | `POST /v1/creative/shots/:shotId/generations` |
+| Batch generation | `POST /v1/creative/projects/:projectId/generation-batches`; query/stop/retry under `/v1/creative/generation-batches/:batchId/...` |
+| Shot workflow groups | `GET/POST /v1/creative/projects/:projectId/workflow-groups`; `POST /v1/creative/workflow-groups/:groupId/run` |
+| Per-shot continuity QC | `POST /v1/creative/shots/:shotId/continuity-qc`; read status through `GET /v1/qc/runs/:qcRunId` |
+| Project import | `POST /v1/creative/imports/...` for structured JSON, OneCrew ZIP, and compatible ZIP archives |
+| Project export | `GET /v1/creative/projects/:projectId/exports/onecrew.zip` |
 | Script plan | `POST /v1/projects/:projectId/plan` |
 | Image generation | `POST /v1/images/generate` |
 | Video generation | `POST /v1/shots/generate` |
@@ -255,7 +299,7 @@ Table definitions, minimum permissions, event subscriptions, and callback securi
 | `pnpm dev` | Run every workspace with a dev task in parallel |
 | `pnpm start:api` | Start the API process |
 | `pnpm start:worker` | Start the asynchronous Worker |
-| `pnpm preview:dev` | Start the read-only review app |
+| `pnpm preview:dev` | Start the Creative Studio, storyboard canvas, and review app |
 | `pnpm remotion:studio` | Open Remotion Studio |
 | `pnpm remotion:demo` | Render the fixed demo Compositions |
 | `pnpm remotion:final-smoke` | Run the Final-render smoke test |
@@ -270,7 +314,7 @@ Table definitions, minimum permissions, event subscriptions, and callback securi
 | `pnpm typecheck` | Type-check the complete workspace |
 | `pnpm test:unit` | Run unit tests |
 | `pnpm test:integration` | Run tests using PostgreSQL, Redis, and MinIO |
-| `pnpm build` | Build all 16 packages/apps |
+| `pnpm build` | Build all 17 packages/apps |
 | `pnpm readme:check` | Verify bilingual README synchronization and critical commands |
 
 Recommended pre-commit checks:
@@ -291,10 +335,11 @@ apps/
   api/                 Fastify API, health checks, and HTTP routes
   worker/              BullMQ consumers for generation/render/QC/publishing
   remotion/            Compositions, components, Player, and Final Renderer
-  preview/             Read-only review UI
+  preview/             React Creative Studio, storyboard canvas, and Remotion review UI
 packages/
   config/              Zod environment contract
   contracts/           Shared contracts and JSON Schemas
+  creative/            Creative domain model, project import/export, media materialization
   domain/              State machines, versions, and input hashes
   db/                  Drizzle schema, migrations, seed, repositories
   design-adapter/      Open Design parsing and Design Pack compilation
@@ -318,18 +363,26 @@ docs/                   API, operations, configuration, and verification docs
 - Asset records include source, provider, model, seed, content hash, and license.
 - Cached Jobs reuse the original asset ID. Regeneration creates a new version connected to the previous version through `parentAssetId`.
 - Feishu stores control data and controlled links, not large media files.
-- Preview cannot mutate project state. Approval actions enter only through the Feishu control plane.
+- Episode, character/scene/prop, and shot edits use optimistic versions; accepted changes and the actor are written to the audit log.
+- OneCrew project ZIPs preserve the full creative contract and media. Import rejects traversal, duplicate or undeclared entries, expansion-limit violations, and media hash mismatches.
+- The Studio can organize creative data and media, but it does not expose approval, release, or provider-switch actions. Those actions enter only through the Feishu control plane.
 
 ## Tests and current completion
 
 Latest complete local regression (2026-07-15):
 
-- lint, typecheck, and build passed across all 16 workspaces;
-- 69 unit tests passed;
-- 32 integration tests passed;
-- a fresh database applied 7 migrations and produced 18 business tables plus 10 demo shots;
+- lint, typecheck, and build passed across all 17 workspaces;
+- 92 unit tests passed;
+- 37 integration tests passed;
+- a fresh database applied 10 migrations and produced 23 business tables plus 10 demo shots;
+- JSON and ZIP project imports passed API smoke tests; ZIP media was written to local MinIO and bound to versioned assets; a OneCrew export containing three real MinIO assets passed browser-download and ZIP-integrity checks;
+- story planning ran through the local Mock Worker: a two-episode structured plan plus character/scene/prop definitions was previewed and appended in one transaction, project version advanced from v1 to v2, same-Job replay remained idempotent, and stale versions returned 409;
+- a 2×2 composite image was split by real local FFmpeg into four PNG files, stored in MinIO, and atomically bound to character v2; the same idempotency key replayed without adding asset records, and the next image Job received seven ordered references plus aligned `@ImageN` semantic mappings;
+- the global library ran across two real database projects: search returned origin project/entity metadata and a controlled MinIO URI, reuse advanced the target character to v2, and its project-local alias preserved the original URI, SHA-256, and `parentAssetId`; same-key replay remained idempotent;
+- shot workflow groups ran against the real database and browser: a selected group remained after reload, a missing-only run skipped an existing image, and a forced rerun created a new batch that entered the existing Feishu human gate when the project budget was insufficient;
+- the Creative Studio was verified at desktop and `390 × 844` mobile viewports, including story-plan preview/apply, project switching, script/shot saves, character/scene/prop editing, composite-reference splitting and binding, global asset search/reuse, shot workflow groups, versioned-asset binding, single-shot and batch image/video generation, durable batch recovery/stop/retry, continuity QC, version-chain write-back, version conflicts, canvas, export, and final review, with no errors or warnings in a clean browser session;
 - all 10 Final MP4 files were H.264/AAC at 30 fps;
-- 15 technical QC checks and the Mock VLM decision passed;
+- the general QC suite passed all 15 technical checks and its Mock VLM decision; per-shot continuity QC also passed a full run against a decodable MinIO image, while an invalid input was verified to open the durable human gate;
 - the publish ZIP passed integrity checks for 14 entries, including eight bilingual promotional videos and twelve experiment seeds.
 
 CI is defined in [.github/workflows/ci.yml](./.github/workflows/ci.yml). Every push and pull request starts infrastructure from `.env.example` and runs the complete verification suite.

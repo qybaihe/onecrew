@@ -22,8 +22,10 @@
 | Open Design format | `DESIGN.md` 9-section contract（参考 Open Design 0.8+） | 设计输入格式，不引入其渲染器 | Open Design 框架 Apache-2.0；每个导入设计系统/素材仍需单独核对来源；[官方仓库](https://github.com/nexu-io/open-design) |
 | Remotion / Renderer / Bundler / Player | `4.0.489` | 六 Composition、Player 和唯一服务端 MP4 渲染链路 | 定制 Remotion License：个人、非营利组织、评估用途及最多 3 名员工的营利组织可免费使用；其他商业实体需 Company License。上线前必须根据实际法律实体复核；[官方许可](https://www.remotion.dev/license) |
 | FFmpeg / ffprobe | 本机 `7.1.1` | QC 解码、探测、黑屏/冻结/音频分析和 VLM 审片帧；不作为正式成片渲染器 | FFmpeg 本体可按 LGPL 使用，但当前 Homebrew 二进制编译参数包含 `--enable-gpl` 和 libx264，因此该实际组合按 GPLv2+ 处理；分发前必须按部署二进制重新核对；[官方法律说明](https://ffmpeg.org/legal.html) |
-| React / React DOM | `19.2.7` | Remotion Composition 和只读 Player 界面 | MIT；[官方仓库](https://github.com/facebook/react) |
-| Vite / React Plugin | `8.1.4` / `6.0.3` | 只读预览页构建与本地开发服务器 | MIT；[官方仓库](https://github.com/vitejs/vite) |
+| React / React DOM | `19.2.7` | Remotion Composition、创作台和 Player 界面 | MIT；[官方仓库](https://github.com/facebook/react) |
+| React Flow | `12.11.2` | 创作台分镜关系画布 | MIT；[官方仓库](https://github.com/xyflow/xyflow) |
+| Vite / React Plugin | `8.1.4` / `6.0.3` | 创作台与审片页构建、本地开发服务器 | MIT；[官方仓库](https://github.com/vitejs/vite) |
+| adm-zip | `0.5.16` | 读取并校验创作工程 ZIP；媒体写入仍经过受控 S3/MinIO 边界 | MIT；[官方仓库](https://github.com/cthackers/adm-zip) |
 | fflate | `0.8.3` | 在内存中构建确定性发布 ZIP | MIT；[官方仓库](https://github.com/101arrowz/fflate) |
 | Vitest | `4.1.10` | 单元与集成测试 | MIT；[官方仓库](https://github.com/vitest-dev/vitest) |
 | ESLint / typescript-eslint | `10.7.0` / `8.64.0` | 静态检查 | MIT |
@@ -36,3 +38,5 @@ Docker Compose 的就绪顺序遵循官方 `healthcheck`/`service_healthy` 模�
 `msgpackr-extract` 是传递依赖的可选原生加速器。pnpm 明确忽略其安装脚本，当前 BullMQ 集成测试在纯 JavaScript 回退路径通过，避免为非必要性能优化扩大供应链执行面。
 
 `<Player acknowledgeRemotionLicense />` 只表示工程已显式阅读上述条款，不代表已自动获得任何需付费的 Company License。
+
+创作工程兼容适配涉及的上游版权声明见仓库根目录 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

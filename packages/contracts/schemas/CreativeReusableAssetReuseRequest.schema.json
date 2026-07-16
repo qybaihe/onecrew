@@ -1,0 +1,31 @@
+{
+  "$id": "https://onecrew.local/schemas/CreativeReusableAssetReuseRequest.schema.json",
+  "title": "CreativeReusableAssetReuseRequest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "sourceAssetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "expectedEntityVersion": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "actorOpenId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    }
+  },
+  "required": [
+    "sourceAssetId",
+    "expectedEntityVersion",
+    "actorOpenId"
+  ],
+  "additionalProperties": false
+}

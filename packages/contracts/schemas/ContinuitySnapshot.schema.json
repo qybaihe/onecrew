@@ -1,0 +1,71 @@
+{
+  "$id": "https://onecrew.local/schemas/ContinuitySnapshot.schema.json",
+  "title": "ContinuitySnapshot",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "sourceShotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "characters": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "clothing": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "expression": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "props": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+            }
+          }
+        },
+        "required": [
+          "props"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "lighting": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "cameraAxis": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 4000
+    }
+  },
+  "required": [
+    "characters"
+  ],
+  "additionalProperties": false
+}

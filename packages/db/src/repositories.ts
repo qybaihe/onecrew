@@ -1,6 +1,17 @@
 import {
   assetRecordSchema,
+  characterSpecSchema,
+  creativeEntitySchema,
+  creativeGenerationBatchSchema,
+  creativeWorkflowGroupSchema,
+  creativeProjectBundleSchema,
+  creativeReferenceGridResultSchema,
+  creativeReusableAssetReuseResultSchema,
+  creativeReusableAssetSchema,
+  creativeStoryPlanApplyResultSchema,
+  episodeSpecSchema,
   feishuCardActionSchema,
+  framePromptSpecSchema,
   humanGateSchema,
   experimentRecordSchema,
   jobRecordSchema,
@@ -13,10 +24,22 @@ import {
   qcRunRecordSchema,
   publishRecordSchema,
   renderRecordSchema,
+  propSpecSchema,
+  sceneSpecSchema,
   shotSpecSchema,
   type AssetRecord,
   type AssetStatus,
+  type CreativeEntity,
+  type CreativeGenerationBatch,
+  type CreativeWorkflowGroup,
+  type CreativeProjectBundle,
+  type CreativeReferenceGridResult,
+  type CreativeReusableAsset,
+  type CreativeReusableAssetReuseResult,
+  type CreativeStoryPlanApplyResult,
+  type EpisodeSpec,
   type FeishuCardAction,
+  type FramePromptSpec,
   type HumanGate,
   type ExperimentRecord,
   type JobRecord,
@@ -45,14 +68,19 @@ import {
   createInputHash,
   VersionConflictError,
 } from '@onecrew/domain';
-import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import type { OneCrewDatabase } from './client.js';
 import {
   assets,
   auditLogs,
+  creativeGenerationBatches,
+  creativeWorkflowGroups,
+  creativeEntities,
+  episodes,
   experiments,
   feishuRecordLinks,
+  framePrompts,
   humanGates,
   idempotencyKeys,
   jobs,
@@ -86,6 +114,34 @@ export class IdempotencyConflictError extends Error {
   }
 }
 
+export class InvalidCreativeAssetBindingError extends Error {
+  constructor(readonly assetIds: string[]) {
+    super(`Creative entity references assets outside its project: ${assetIds.join(', ')}`);
+    this.name = 'InvalidCreativeAssetBindingError';
+  }
+}
+
+export class InvalidCreativeReferenceGridError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCreativeReferenceGridError';
+  }
+}
+
+export class InvalidCreativeReusableAssetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCreativeReusableAssetError';
+  }
+}
+
+export class InvalidCreativeWorkflowGroupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCreativeWorkflowGroupError';
+  }
+}
+
 export interface Versioned<T> {
   value: T;
   version: number;
@@ -93,11 +149,22 @@ export interface Versioned<T> {
 
 async function currentVersionOrThrow(
   db: OneCrewDatabase,
-  entity: 'project' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'creative_workflow_group' | 'render' | 'qc_run' | 'localization_run',
   id: string,
 ): Promise<number> {
   if (entity === 'project') {
     const [row] = await db.select({ version: projects.version }).from(projects).where(eq(projects.projectId, id));
+    if (row) return row.version;
+  }
+  if (entity === 'episode') {
+    const [row] = await db.select({ version: episodes.version }).from(episodes).where(eq(episodes.episodeId, id));
+    if (row) return row.version;
+  }
+  if (entity === 'creative_entity') {
+    const [row] = await db
+      .select({ version: creativeEntities.version })
+      .from(creativeEntities)
+      .where(eq(creativeEntities.entityId, id));
     if (row) return row.version;
   }
   if (entity === 'shot') {
@@ -110,6 +177,20 @@ async function currentVersionOrThrow(
   }
   if (entity === 'job') {
     const [row] = await db.select({ version: jobs.version }).from(jobs).where(eq(jobs.jobId, id));
+    if (row) return row.version;
+  }
+  if (entity === 'creative_generation_batch') {
+    const [row] = await db
+      .select({ version: creativeGenerationBatches.version })
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.batchId, id));
+    if (row) return row.version;
+  }
+  if (entity === 'creative_workflow_group') {
+    const [row] = await db
+      .select({ version: creativeWorkflowGroups.version })
+      .from(creativeWorkflowGroups)
+      .where(eq(creativeWorkflowGroups.groupId, id));
     if (row) return row.version;
   }
   if (entity === 'render') {
@@ -132,7 +213,7 @@ async function currentVersionOrThrow(
 
 async function throwVersionConflict(
   db: OneCrewDatabase,
-  entity: 'project' | 'shot' | 'asset' | 'job' | 'render' | 'qc_run' | 'localization_run',
+  entity: 'project' | 'episode' | 'creative_entity' | 'shot' | 'asset' | 'job' | 'creative_generation_batch' | 'creative_workflow_group' | 'render' | 'qc_run' | 'localization_run',
   id: string,
   expectedVersion: number,
 ): Promise<never> {
@@ -175,6 +256,807 @@ export class ProjectRepository {
       .returning();
     if (!row) return throwVersionConflict(this.db, 'project', projectId, expectedVersion);
     return { value: projectSpecSchema.parse(row.spec), version: row.version };
+  }
+}
+
+export interface CreativeBundleImportResult {
+  projectId: string;
+  episodes: number;
+  entities: number;
+  shots: number;
+  framePrompts: number;
+  assets: number;
+}
+
+export interface CreativeRecordVersions {
+  project: number;
+  episodes: Record<string, number>;
+  entities: Record<string, number>;
+  shots: Record<string, number>;
+  framePrompts: Record<string, number>;
+}
+
+export interface CreativeEditContext {
+  editId: string;
+  actorOpenId: string;
+}
+
+export interface CreativeStoryPlanAppendInput {
+  projectId: string;
+  jobId: string;
+  expectedProjectVersion: number;
+  actorOpenId: string;
+  episodes: EpisodeSpec[];
+  entities: CreativeEntity[];
+}
+
+export interface CreativeReferenceGridApplyInput {
+  entityId: string;
+  sourceAssetId: string;
+  expectedEntityVersion: number;
+  rows: number;
+  columns: number;
+  actorOpenId: string;
+  idempotencyKey: string;
+  tiles: AssetRecord[];
+}
+
+export interface CreativeReusableAssetSearchInput {
+  q?: string;
+  kind?: CreativeEntity['kind'];
+  excludeProjectId?: string;
+  limit?: number;
+}
+
+export interface CreativeReusableAssetApplyInput {
+  entityId: string;
+  sourceAssetId: string;
+  expectedEntityVersion: number;
+  actorOpenId: string;
+  idempotencyKey: string;
+}
+
+type EpisodeEditableField = 'title' | 'description' | 'scriptContent' | 'durationSec' | 'status';
+type ShotEditableFields = Omit<ShotSpec, 'shotId' | 'projectId' | 'episodeId' | 'sequence'>;
+
+export type CreativeEpisodePatch = {
+  [Field in EpisodeEditableField]?: EpisodeSpec[Field] | undefined;
+};
+
+export type CreativeShotPatch = {
+  [Field in keyof ShotEditableFields]?: ShotEditableFields[Field] | undefined;
+};
+
+export class CreativeRepository {
+  constructor(private readonly db: OneCrewDatabase) {}
+
+  async importBundle(
+    input: CreativeProjectBundle,
+    assetsToCreate: AssetRecord[] = [],
+  ): Promise<CreativeBundleImportResult> {
+    const bundle = creativeProjectBundleSchema.parse(input);
+    const importedAssets = assetsToCreate.map((asset) => assetRecordSchema.parse(asset));
+    await this.db.transaction(async (tx) => {
+      await tx.insert(projects).values({
+        projectId: bundle.project.projectId,
+        spec: bundle.project,
+        status: bundle.project.status,
+      });
+      if (bundle.episodes.length > 0) {
+        await tx.insert(episodes).values(
+          bundle.episodes.map((episode) => ({
+            episodeId: episode.episodeId,
+            projectId: episode.projectId,
+            episodeNumber: episode.episodeNumber,
+            spec: episode,
+            status: episode.status,
+          })),
+        );
+      }
+      if (bundle.entities.length > 0) {
+        await tx.insert(creativeEntities).values(
+          bundle.entities.map((entity) => ({
+            entityId: entity.entityId,
+            projectId: entity.projectId,
+            episodeId: entity.episodeId,
+            kind: entity.kind,
+            name: entity.name,
+            spec: entity,
+            status: entity.status,
+          })),
+        );
+      }
+      if (bundle.shots.length > 0) {
+        await tx.insert(shots).values(
+          bundle.shots.map((shot) => ({
+            shotId: shot.shotId,
+            projectId: shot.projectId,
+            sequence: shot.sequence,
+            spec: shot,
+            status: shot.status,
+          })),
+        );
+      }
+      if (bundle.framePrompts.length > 0) {
+        await tx.insert(framePrompts).values(
+          bundle.framePrompts.map((framePrompt) => ({
+            framePromptId: framePrompt.framePromptId,
+            shotId: framePrompt.shotId,
+            frameType: framePrompt.frameType,
+            spec: framePrompt,
+          })),
+        );
+      }
+      if (importedAssets.length > 0) {
+        await tx.insert(assets).values(
+          importedAssets.map((record) => ({
+            assetId: record.assetId,
+            projectId: record.projectId,
+            shotId: record.shotId,
+            parentAssetId: record.parentAssetId,
+            type: record.type,
+            assetVersion: record.version,
+            record,
+            status: record.status,
+            contentHash: record.contentHash,
+          })),
+        );
+      }
+    });
+    return {
+      projectId: bundle.project.projectId,
+      episodes: bundle.episodes.length,
+      entities: bundle.entities.length,
+      shots: bundle.shots.length,
+      framePrompts: bundle.framePrompts.length,
+      assets: importedAssets.length,
+    };
+  }
+
+  async getBundle(projectId: string): Promise<CreativeProjectBundle> {
+    const [projectRow] = await this.db.select().from(projects).where(eq(projects.projectId, projectId));
+    if (!projectRow) throw new RecordNotFoundError('project', projectId);
+    const [episodeRows, entityRows, shotRows] = await Promise.all([
+      this.db.select().from(episodes).where(eq(episodes.projectId, projectId)).orderBy(asc(episodes.episodeNumber)),
+      this.db.select().from(creativeEntities).where(eq(creativeEntities.projectId, projectId)).orderBy(asc(creativeEntities.name)),
+      this.db.select().from(shots).where(eq(shots.projectId, projectId)).orderBy(asc(shots.sequence)),
+    ]);
+    const shotIds = shotRows.map((row) => row.shotId);
+    const frameRows = shotIds.length > 0
+      ? await this.db.select().from(framePrompts).where(inArray(framePrompts.shotId, shotIds)).orderBy(asc(framePrompts.createdAt))
+      : [];
+    const project = projectSpecSchema.parse(projectRow.spec);
+    return creativeProjectBundleSchema.parse({
+      bundleVersion: '1.0',
+      source: project.source ?? { system: 'onecrew' },
+      project,
+      episodes: episodeRows.map((row) => episodeSpecSchema.parse(row.spec)),
+      entities: entityRows.map((row) => creativeEntitySchema.parse(row.spec)),
+      shots: shotRows.map((row) => shotSpecSchema.parse(row.spec)),
+      framePrompts: frameRows.map((row) => framePromptSpecSchema.parse(row.spec)),
+      mediaFiles: [],
+    });
+  }
+
+  async listProjects(): Promise<ProjectSpec[]> {
+    const episodeProjects = await this.db.selectDistinct({ projectId: episodes.projectId }).from(episodes);
+    if (episodeProjects.length === 0) return [];
+    const rows = await this.db
+      .select()
+      .from(projects)
+      .where(inArray(projects.projectId, episodeProjects.map((row) => row.projectId)))
+      .orderBy(desc(projects.updatedAt));
+    return rows.map((row) => projectSpecSchema.parse(row.spec));
+  }
+
+  async listAssets(projectId: string): Promise<AssetRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(assets)
+      .where(eq(assets.projectId, projectId))
+      .orderBy(desc(assets.createdAt));
+    return rows.map((row) => assetRecordSchema.parse(row.record));
+  }
+
+  async searchReusableAssets(input: CreativeReusableAssetSearchInput): Promise<CreativeReusableAsset[]> {
+    const [assetRows, projectRows, entityRows] = await Promise.all([
+      this.db.select().from(assets).orderBy(desc(assets.createdAt)),
+      this.db.select().from(projects),
+      this.db.select().from(creativeEntities),
+    ]);
+    const projectById = new Map(
+      projectRows.map((row) => [row.projectId, projectSpecSchema.parse(row.spec)] as const),
+    );
+    const entityByAssetId = new Map<string, CreativeEntity>();
+    for (const row of entityRows) {
+      const entity = creativeEntitySchema.parse(row.spec);
+      for (const assetId of [...entity.referenceAssetIds, ...entity.extraAssetIds]) {
+        if (!entityByAssetId.has(assetId)) entityByAssetId.set(assetId, entity);
+      }
+    }
+    const query = input.q?.trim().toLocaleLowerCase() ?? '';
+    const limit = Math.min(50, Math.max(1, input.limit ?? 12));
+    const seenContentHashes = new Set<string>();
+    const results: CreativeReusableAsset[] = [];
+    for (const row of assetRows) {
+      const asset = assetRecordSchema.parse(row.record);
+      if (
+        asset.status === 'archived' ||
+        !asset.uri.startsWith('s3://') ||
+        !['image', 'character', 'scene', 'prop', 'poster'].includes(asset.type) ||
+        asset.assetId.startsWith('asset_reuse_') ||
+        asset.projectId === input.excludeProjectId ||
+        seenContentHashes.has(asset.contentHash)
+      ) continue;
+      const project = projectById.get(asset.projectId);
+      if (!project) continue;
+      const entity = entityByAssetId.get(asset.assetId);
+      if (input.kind && entity && entity.kind !== input.kind) continue;
+      if (
+        input.kind &&
+        !entity &&
+        ['character', 'scene', 'prop'].includes(asset.type) &&
+        asset.type !== input.kind
+      ) continue;
+      const haystack = [
+        asset.assetId,
+        asset.type,
+        asset.creativeRole,
+        asset.source,
+        project.nameZh,
+        project.nameEn,
+        entity?.name,
+      ].filter(Boolean).join('\n').toLocaleLowerCase();
+      if (query && !haystack.includes(query)) continue;
+      seenContentHashes.add(asset.contentHash);
+      results.push(creativeReusableAssetSchema.parse({
+        asset,
+        originProject: {
+          projectId: project.projectId,
+          nameZh: project.nameZh,
+          nameEn: project.nameEn,
+        },
+        ...(entity ? {
+          originEntity: { entityId: entity.entityId, kind: entity.kind, name: entity.name },
+        } : {}),
+      }));
+      if (results.length >= limit) break;
+    }
+    return results;
+  }
+
+  async getRecordVersions(projectId: string): Promise<CreativeRecordVersions> {
+    const [projectRows, episodeRows, entityRows, shotRows] = await Promise.all([
+      this.db.select({ projectId: projects.projectId, version: projects.version }).from(projects).where(eq(projects.projectId, projectId)),
+      this.db.select({ id: episodes.episodeId, version: episodes.version }).from(episodes).where(eq(episodes.projectId, projectId)),
+      this.db.select({ id: creativeEntities.entityId, version: creativeEntities.version }).from(creativeEntities).where(eq(creativeEntities.projectId, projectId)),
+      this.db.select({ id: shots.shotId, version: shots.version }).from(shots).where(eq(shots.projectId, projectId)),
+    ]);
+    const [projectRow] = projectRows;
+    if (!projectRow) throw new RecordNotFoundError('project', projectId);
+    const shotIds = shotRows.map((row) => row.id);
+    const frameRows = shotIds.length > 0
+      ? await this.db.select({ id: framePrompts.framePromptId, version: framePrompts.version }).from(framePrompts).where(inArray(framePrompts.shotId, shotIds))
+      : [];
+    return {
+      project: projectRow.version,
+      episodes: Object.fromEntries(episodeRows.map((row) => [row.id, row.version])),
+      entities: Object.fromEntries(entityRows.map((row) => [row.id, row.version])),
+      shots: Object.fromEntries(shotRows.map((row) => [row.id, row.version])),
+      framePrompts: Object.fromEntries(frameRows.map((row) => [row.id, row.version])),
+    };
+  }
+
+  async appendStoryPlan(input: CreativeStoryPlanAppendInput): Promise<CreativeStoryPlanApplyResult> {
+    const plannedEpisodes = input.episodes.map((episode) => episodeSpecSchema.parse(episode));
+    const plannedEntities = input.entities.map((entity) => creativeEntitySchema.parse(entity));
+    if (plannedEpisodes.some((episode) => episode.projectId !== input.projectId)) {
+      throw new Error('Story plan episode projectId does not match target project');
+    }
+    if (plannedEntities.some((entity) => entity.projectId !== input.projectId)) {
+      throw new Error('Story plan entity projectId does not match target project');
+    }
+    const eventId = `story_plan_${input.jobId}`;
+    const auditId = `audit_${createInputHash({ eventId, action: 'apply_creative_story_plan' }).slice(0, 32)}`;
+    return this.db.transaction(async (tx) => {
+      const [existingAudit] = await tx.select().from(auditLogs).where(eq(auditLogs.auditId, auditId));
+      if (existingAudit) {
+        const replay = creativeStoryPlanApplyResultSchema.parse(existingAudit.details);
+        return { ...replay, replayed: true };
+      }
+      const [projectRow] = await tx.select().from(projects).where(eq(projects.projectId, input.projectId));
+      if (!projectRow) throw new RecordNotFoundError('project', input.projectId);
+      assertExpectedVersion(input.expectedProjectVersion, projectRow.version);
+      const project = projectSpecSchema.parse(projectRow.spec);
+      const existingEpisodeRows = await tx
+        .select({ episodeId: episodes.episodeId })
+        .from(episodes)
+        .where(eq(episodes.projectId, input.projectId));
+      const nextProject = projectSpecSchema.parse({
+        ...project,
+        totalEpisodes: existingEpisodeRows.length + plannedEpisodes.length,
+      });
+      const [updatedProject] = await tx
+        .update(projects)
+        .set({ spec: nextProject, version: input.expectedProjectVersion + 1, updatedAt: new Date() })
+        .where(and(eq(projects.projectId, input.projectId), eq(projects.version, input.expectedProjectVersion)))
+        .returning();
+      if (!updatedProject) {
+        return throwVersionConflict(this.db, 'project', input.projectId, input.expectedProjectVersion);
+      }
+      if (plannedEntities.length > 0) {
+        await tx.insert(creativeEntities).values(plannedEntities.map((entity) => ({
+          entityId: entity.entityId,
+          projectId: entity.projectId,
+          episodeId: entity.episodeId,
+          kind: entity.kind,
+          name: entity.name,
+          spec: entity,
+          status: entity.status,
+        })));
+      }
+      if (plannedEpisodes.length > 0) {
+        await tx.insert(episodes).values(plannedEpisodes.map((episode) => ({
+          episodeId: episode.episodeId,
+          projectId: episode.projectId,
+          episodeNumber: episode.episodeNumber,
+          spec: episode,
+          status: episode.status,
+        })));
+      }
+      const result = creativeStoryPlanApplyResultSchema.parse({
+        projectId: input.projectId,
+        jobId: input.jobId,
+        projectVersion: updatedProject.version,
+        replayed: false,
+        episodeIds: plannedEpisodes.map((episode) => episode.episodeId),
+        entityIds: plannedEntities.map((entity) => entity.entityId),
+      });
+      await tx.insert(auditLogs).values({
+        auditId,
+        source: 'creative_story_planner',
+        eventId,
+        projectId: input.projectId,
+        actorOpenId: input.actorOpenId,
+        action: 'apply_creative_story_plan',
+        targetType: 'project',
+        targetId: input.projectId,
+        expectedVersion: input.expectedProjectVersion,
+        outcome: 'accepted',
+        details: result,
+      });
+      return result;
+    });
+  }
+
+  async applyReferenceGrid(input: CreativeReferenceGridApplyInput): Promise<CreativeReferenceGridResult> {
+    const tiles = input.tiles.map((tile) => assetRecordSchema.parse(tile));
+    if (tiles.length !== input.rows * input.columns || tiles.length < 2 || tiles.length > 9) {
+      throw new InvalidCreativeReferenceGridError('Reference grid tile count does not match rows and columns');
+    }
+    const inputHash = createInputHash({
+      entityId: input.entityId,
+      sourceAssetId: input.sourceAssetId,
+      expectedEntityVersion: input.expectedEntityVersion,
+      rows: input.rows,
+      columns: input.columns,
+      tiles: tiles.map((tile) => ({ assetId: tile.assetId, uri: tile.uri, contentHash: tile.contentHash })),
+    });
+    const auditId = `audit_${createInputHash({
+      scope: 'creative_reference_grid',
+      entityId: input.entityId,
+      key: input.idempotencyKey,
+    }).slice(0, 32)}`;
+    return this.db.transaction(async (tx) => {
+      const [existingAudit] = await tx.select().from(auditLogs).where(eq(auditLogs.auditId, auditId));
+      if (existingAudit) {
+        const details = existingAudit.details as { inputHash?: unknown; result?: unknown };
+        if (details.inputHash !== inputHash) {
+          throw new IdempotencyConflictError(`creative_reference_grid/${input.entityId}`, input.idempotencyKey);
+        }
+        const replay = creativeReferenceGridResultSchema.parse(details.result);
+        return { ...replay, replayed: true };
+      }
+      const [[entityRow], [sourceRow]] = await Promise.all([
+        tx.select().from(creativeEntities).where(eq(creativeEntities.entityId, input.entityId)),
+        tx.select().from(assets).where(eq(assets.assetId, input.sourceAssetId)),
+      ]);
+      if (!entityRow) throw new RecordNotFoundError('creative_entity', input.entityId);
+      if (!sourceRow) throw new RecordNotFoundError('asset', input.sourceAssetId);
+      assertExpectedVersion(input.expectedEntityVersion, entityRow.version);
+      const entity = creativeEntitySchema.parse(entityRow.spec);
+      const source = assetRecordSchema.parse(sourceRow.record);
+      if (source.projectId !== entity.projectId) {
+        throw new InvalidCreativeReferenceGridError('Reference grid source asset must belong to the entity project');
+      }
+      if (!['image', 'character', 'scene', 'prop', 'poster'].includes(source.type)) {
+        throw new InvalidCreativeReferenceGridError(`Reference grid source asset is not an image: ${source.type}`);
+      }
+      if (tiles.some((tile) =>
+        tile.projectId !== entity.projectId || tile.parentAssetId !== source.assetId || tile.type !== 'image'
+      )) {
+        throw new InvalidCreativeReferenceGridError('Derived reference tiles have invalid project, parent, or type');
+      }
+      await tx.insert(assets).values(tiles.map((tile) => ({
+        assetId: tile.assetId,
+        projectId: tile.projectId,
+        shotId: tile.shotId,
+        parentAssetId: tile.parentAssetId,
+        type: tile.type,
+        assetVersion: tile.version,
+        record: tile,
+        status: tile.status,
+        contentHash: tile.contentHash,
+      }))).onConflictDoNothing();
+      const storedTiles = await tx.select().from(assets).where(inArray(assets.assetId, tiles.map((tile) => tile.assetId)));
+      const storedById = new Map(storedTiles.map((row) => [row.assetId, assetRecordSchema.parse(row.record)]));
+      for (const tile of tiles) {
+        const stored = storedById.get(tile.assetId);
+        if (!stored || stored.projectId !== tile.projectId || stored.contentHash !== tile.contentHash || stored.uri !== tile.uri) {
+          throw new InvalidCreativeReferenceGridError(`Reference tile collision: ${tile.assetId}`);
+        }
+      }
+      const nextEntity = creativeEntitySchema.parse({
+        ...entity,
+        referenceAssetIds: [
+          ...entity.referenceAssetIds.filter((assetId) => assetId !== source.assetId),
+          ...tiles.map((tile) => tile.assetId),
+        ].filter((assetId, index, all) => all.indexOf(assetId) === index),
+      });
+      const [updatedEntity] = await tx
+        .update(creativeEntities)
+        .set({
+          spec: nextEntity,
+          version: input.expectedEntityVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(creativeEntities.entityId, input.entityId),
+          eq(creativeEntities.version, input.expectedEntityVersion),
+        ))
+        .returning();
+      if (!updatedEntity) {
+        return throwVersionConflict(this.db, 'creative_entity', input.entityId, input.expectedEntityVersion);
+      }
+      const result = creativeReferenceGridResultSchema.parse({
+        projectId: entity.projectId,
+        entityId: entity.entityId,
+        sourceAssetId: source.assetId,
+        rows: input.rows,
+        columns: input.columns,
+        tileAssetIds: tiles.map((tile) => tile.assetId),
+        entityVersion: updatedEntity.version,
+        replayed: false,
+      });
+      await tx.insert(auditLogs).values({
+        auditId,
+        source: 'creative_reference_grid',
+        eventId: input.idempotencyKey,
+        projectId: entity.projectId,
+        actorOpenId: input.actorOpenId,
+        action: 'split_reference_grid',
+        targetType: entity.kind,
+        targetId: entity.entityId,
+        expectedVersion: input.expectedEntityVersion,
+        outcome: 'accepted',
+        details: { inputHash, result },
+      });
+      return result;
+    });
+  }
+
+  async reuseAsset(input: CreativeReusableAssetApplyInput): Promise<CreativeReusableAssetReuseResult> {
+    const inputHash = createInputHash({
+      entityId: input.entityId,
+      sourceAssetId: input.sourceAssetId,
+      expectedEntityVersion: input.expectedEntityVersion,
+    });
+    const auditId = `audit_${createInputHash({
+      scope: 'creative_reusable_asset',
+      entityId: input.entityId,
+      key: input.idempotencyKey,
+    }).slice(0, 32)}`;
+    return this.db.transaction(async (tx) => {
+      const [existingAudit] = await tx.select().from(auditLogs).where(eq(auditLogs.auditId, auditId));
+      if (existingAudit) {
+        const details = existingAudit.details as { inputHash?: unknown; result?: unknown };
+        if (details.inputHash !== inputHash) {
+          throw new IdempotencyConflictError(`creative_reusable_asset/${input.entityId}`, input.idempotencyKey);
+        }
+        const replay = creativeReusableAssetReuseResultSchema.parse(details.result);
+        return { ...replay, replayed: true };
+      }
+      const [[entityRow], [sourceRow]] = await Promise.all([
+        tx.select().from(creativeEntities).where(eq(creativeEntities.entityId, input.entityId)),
+        tx.select().from(assets).where(eq(assets.assetId, input.sourceAssetId)),
+      ]);
+      if (!entityRow) throw new RecordNotFoundError('creative_entity', input.entityId);
+      if (!sourceRow) throw new RecordNotFoundError('asset', input.sourceAssetId);
+      assertExpectedVersion(input.expectedEntityVersion, entityRow.version);
+      const entity = creativeEntitySchema.parse(entityRow.spec);
+      const sourceAsset = assetRecordSchema.parse(sourceRow.record);
+      if (
+        sourceAsset.status === 'archived' ||
+        !sourceAsset.uri.startsWith('s3://') ||
+        !['image', 'character', 'scene', 'prop', 'poster'].includes(sourceAsset.type)
+      ) {
+        throw new InvalidCreativeReusableAssetError('Reusable asset must be an active controlled image asset');
+      }
+      const now = new Date().toISOString();
+      const reusedAsset = sourceAsset.projectId === entity.projectId
+        ? sourceAsset
+        : assetRecordSchema.parse({
+            ...sourceAsset,
+            assetId: `asset_reuse_${createInputHash({
+              sourceAssetId: sourceAsset.assetId,
+              targetProjectId: entity.projectId,
+            }).slice(0, 32)}`,
+            projectId: entity.projectId,
+            shotId: undefined,
+            parentAssetId: sourceAsset.assetId,
+            version: 1,
+            source: `Reusable project alias of ${sourceAsset.assetId}`,
+            status: 'draft',
+            createdAt: now,
+            updatedAt: now,
+          });
+      if (reusedAsset.assetId !== sourceAsset.assetId) {
+        await tx.insert(assets).values({
+          assetId: reusedAsset.assetId,
+          projectId: reusedAsset.projectId,
+          parentAssetId: reusedAsset.parentAssetId,
+          type: reusedAsset.type,
+          assetVersion: reusedAsset.version,
+          record: reusedAsset,
+          status: reusedAsset.status,
+          contentHash: reusedAsset.contentHash,
+        }).onConflictDoNothing();
+        const [storedRow] = await tx.select().from(assets).where(eq(assets.assetId, reusedAsset.assetId));
+        const stored = storedRow ? assetRecordSchema.parse(storedRow.record) : undefined;
+        if (
+          !stored ||
+          stored.projectId !== entity.projectId ||
+          stored.uri !== reusedAsset.uri ||
+          stored.contentHash !== reusedAsset.contentHash ||
+          stored.parentAssetId !== sourceAsset.assetId
+        ) {
+          throw new InvalidCreativeReusableAssetError(`Reusable asset collision: ${reusedAsset.assetId}`);
+        }
+      }
+      const nextEntity = creativeEntitySchema.parse({
+        ...entity,
+        referenceAssetIds: [...new Set([...entity.referenceAssetIds, reusedAsset.assetId])],
+      });
+      const [updatedEntity] = await tx
+        .update(creativeEntities)
+        .set({ spec: nextEntity, version: input.expectedEntityVersion + 1, updatedAt: new Date() })
+        .where(and(
+          eq(creativeEntities.entityId, input.entityId),
+          eq(creativeEntities.version, input.expectedEntityVersion),
+        ))
+        .returning();
+      if (!updatedEntity) {
+        return throwVersionConflict(this.db, 'creative_entity', input.entityId, input.expectedEntityVersion);
+      }
+      const result = creativeReusableAssetReuseResultSchema.parse({
+        projectId: entity.projectId,
+        entityId: entity.entityId,
+        sourceAssetId: sourceAsset.assetId,
+        reusedAssetId: reusedAsset.assetId,
+        entityVersion: updatedEntity.version,
+        replayed: false,
+      });
+      await tx.insert(auditLogs).values({
+        auditId,
+        source: 'creative_asset_library',
+        eventId: input.idempotencyKey,
+        projectId: entity.projectId,
+        actorOpenId: input.actorOpenId,
+        action: 'reuse_creative_asset',
+        targetType: entity.kind,
+        targetId: entity.entityId,
+        expectedVersion: input.expectedEntityVersion,
+        outcome: 'accepted',
+        details: { inputHash, result },
+      });
+      return result;
+    });
+  }
+
+  async updateEpisode(
+    episodeId: string,
+    expectedVersion: number,
+    patch: CreativeEpisodePatch,
+    context: CreativeEditContext,
+  ): Promise<Versioned<EpisodeSpec>> {
+    const [currentRow] = await this.db.select().from(episodes).where(eq(episodes.episodeId, episodeId));
+    if (!currentRow) throw new RecordNotFoundError('episode', episodeId);
+    assertExpectedVersion(expectedVersion, currentRow.version);
+    const current = episodeSpecSchema.parse(currentRow.spec);
+    const next = episodeSpecSchema.parse({
+      ...current,
+      ...patch,
+      episodeId: current.episodeId,
+      projectId: current.projectId,
+      episodeNumber: current.episodeNumber,
+    });
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(episodes)
+        .set({ spec: next, status: next.status, version: expectedVersion + 1, updatedAt: new Date() })
+        .where(and(eq(episodes.episodeId, episodeId), eq(episodes.version, expectedVersion)))
+        .returning();
+      if (!row) return throwVersionConflict(this.db, 'episode', episodeId, expectedVersion);
+      await tx.insert(auditLogs).values({
+        auditId: `audit_${createInputHash({ editId: context.editId, action: 'update_episode', episodeId }).slice(0, 32)}`,
+        source: 'creative_studio',
+        eventId: context.editId,
+        projectId: current.projectId,
+        actorOpenId: context.actorOpenId,
+        action: 'update_episode',
+        targetType: 'episode',
+        targetId: episodeId,
+        expectedVersion,
+        outcome: 'accepted',
+        details: { changedFields: Object.keys(patch), version: row.version },
+      });
+      return { value: episodeSpecSchema.parse(row.spec), version: row.version };
+    });
+  }
+
+  async updateShot(
+    shotId: string,
+    expectedVersion: number,
+    patch: CreativeShotPatch,
+    context: CreativeEditContext,
+  ): Promise<Versioned<ShotSpec>> {
+    const [currentRow] = await this.db.select().from(shots).where(eq(shots.shotId, shotId));
+    if (!currentRow) throw new RecordNotFoundError('shot', shotId);
+    assertExpectedVersion(expectedVersion, currentRow.version);
+    const current = shotSpecSchema.parse(currentRow.spec);
+    const next = shotSpecSchema.parse({
+      ...current,
+      ...patch,
+      shotId: current.shotId,
+      projectId: current.projectId,
+      episodeId: current.episodeId,
+      sequence: current.sequence,
+    });
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(shots)
+        .set({ spec: next, status: next.status, version: expectedVersion + 1, updatedAt: new Date() })
+        .where(and(eq(shots.shotId, shotId), eq(shots.version, expectedVersion)))
+        .returning();
+      if (!row) return throwVersionConflict(this.db, 'shot', shotId, expectedVersion);
+      await tx.insert(auditLogs).values({
+        auditId: `audit_${createInputHash({ editId: context.editId, action: 'update_shot', shotId }).slice(0, 32)}`,
+        source: 'creative_studio',
+        eventId: context.editId,
+        projectId: current.projectId,
+        actorOpenId: context.actorOpenId,
+        action: 'update_shot',
+        targetType: 'shot',
+        targetId: shotId,
+        expectedVersion,
+        outcome: 'accepted',
+        details: { changedFields: Object.keys(patch), version: row.version },
+      });
+      return { value: shotSpecSchema.parse(row.spec), version: row.version };
+    });
+  }
+
+  async updateEntity(
+    entityId: string,
+    expectedVersion: number,
+    patch: Record<string, unknown>,
+    context: CreativeEditContext,
+  ): Promise<Versioned<CreativeEntity>> {
+    const [currentRow] = await this.db.select().from(creativeEntities).where(eq(creativeEntities.entityId, entityId));
+    if (!currentRow) throw new RecordNotFoundError('creative_entity', entityId);
+    assertExpectedVersion(expectedVersion, currentRow.version);
+    const current = creativeEntitySchema.parse(currentRow.spec);
+    const candidate = {
+      ...current,
+      ...patch,
+      entityId: current.entityId,
+      projectId: current.projectId,
+      episodeId: current.episodeId,
+      kind: current.kind,
+    };
+    const next = current.kind === 'character'
+      ? characterSpecSchema.strict().parse(candidate)
+      : current.kind === 'scene'
+        ? sceneSpecSchema.strict().parse(candidate)
+        : propSpecSchema.strict().parse(candidate);
+    if (patch.referenceAssetIds !== undefined && next.referenceAssetIds.length > 0) {
+      const boundAssets = await this.db
+        .select({ assetId: assets.assetId, projectId: assets.projectId })
+        .from(assets)
+        .where(inArray(assets.assetId, next.referenceAssetIds));
+      const validAssetIds = new Set(
+        boundAssets.filter((asset) => asset.projectId === current.projectId).map((asset) => asset.assetId),
+      );
+      const invalidAssetIds = next.referenceAssetIds.filter((assetId) => !validAssetIds.has(assetId));
+      if (invalidAssetIds.length > 0) throw new InvalidCreativeAssetBindingError(invalidAssetIds);
+    }
+    return this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(creativeEntities)
+        .set({
+          spec: next,
+          name: next.name,
+          status: next.status,
+          version: expectedVersion + 1,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(creativeEntities.entityId, entityId), eq(creativeEntities.version, expectedVersion)))
+        .returning();
+      if (!row) return throwVersionConflict(this.db, 'creative_entity', entityId, expectedVersion);
+      await tx.insert(auditLogs).values({
+        auditId: `audit_${createInputHash({ editId: context.editId, action: 'update_creative_entity', entityId }).slice(0, 32)}`,
+        source: 'creative_studio',
+        eventId: context.editId,
+        projectId: current.projectId,
+        actorOpenId: context.actorOpenId,
+        action: 'update_creative_entity',
+        targetType: current.kind,
+        targetId: entityId,
+        expectedVersion,
+        outcome: 'accepted',
+        details: { changedFields: Object.keys(patch), version: row.version },
+      });
+      return { value: creativeEntitySchema.parse(row.spec), version: row.version };
+    });
+  }
+
+  async createEpisode(input: EpisodeSpec): Promise<Versioned<EpisodeSpec>> {
+    const spec = episodeSpecSchema.parse(input);
+    const [row] = await this.db
+      .insert(episodes)
+      .values({
+        episodeId: spec.episodeId,
+        projectId: spec.projectId,
+        episodeNumber: spec.episodeNumber,
+        spec,
+        status: spec.status,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created episode');
+    return { value: episodeSpecSchema.parse(row.spec), version: row.version };
+  }
+
+  async createEntity(input: CreativeEntity): Promise<Versioned<CreativeEntity>> {
+    const spec = creativeEntitySchema.parse(input);
+    const [row] = await this.db
+      .insert(creativeEntities)
+      .values({
+        entityId: spec.entityId,
+        projectId: spec.projectId,
+        episodeId: spec.episodeId,
+        kind: spec.kind,
+        name: spec.name,
+        spec,
+        status: spec.status,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created creative entity');
+    return { value: creativeEntitySchema.parse(row.spec), version: row.version };
+  }
+
+  async createFramePrompt(input: FramePromptSpec): Promise<Versioned<FramePromptSpec>> {
+    const spec = framePromptSpecSchema.parse(input);
+    const [row] = await this.db
+      .insert(framePrompts)
+      .values({
+        framePromptId: spec.framePromptId,
+        shotId: spec.shotId,
+        frameType: spec.frameType,
+        spec,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created frame prompt');
+    return { value: framePromptSpecSchema.parse(row.spec), version: row.version };
   }
 }
 
@@ -388,6 +1270,220 @@ export class JobRepository {
       .returning();
     if (!row) return throwVersionConflict(this.db, 'job', jobId, expectedVersion);
     return { value: jobRecordSchema.parse(row.record), version: row.version };
+  }
+}
+
+export class CreativeGenerationBatchRepository {
+  constructor(private readonly db: OneCrewDatabase) {}
+
+  async create(
+    input: CreativeGenerationBatch,
+    idempotencyKey: string,
+  ): Promise<Versioned<CreativeGenerationBatch>> {
+    const record = creativeGenerationBatchSchema.parse(input);
+    const [row] = await this.db
+      .insert(creativeGenerationBatches)
+      .values({
+        batchId: record.batchId,
+        projectId: record.projectId,
+        kind: record.kind,
+        status: record.status,
+        idempotencyKey,
+        inputHash: record.inputHash,
+        record,
+      })
+      .returning();
+    if (!row) throw new Error('PostgreSQL did not return the created creative generation batch');
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async get(batchId: string): Promise<Versioned<CreativeGenerationBatch>> {
+    const [row] = await this.db
+      .select()
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.batchId, batchId));
+    if (!row) throw new RecordNotFoundError('creative_generation_batch', batchId);
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async getByIdempotency(
+    projectId: string,
+    idempotencyKey: string,
+  ): Promise<Versioned<CreativeGenerationBatch> | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(creativeGenerationBatches)
+      .where(
+        and(
+          eq(creativeGenerationBatches.projectId, projectId),
+          eq(creativeGenerationBatches.idempotencyKey, idempotencyKey),
+        ),
+      );
+    if (!row) return undefined;
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async latestForProject(projectId: string): Promise<Versioned<CreativeGenerationBatch> | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.projectId, projectId))
+      .orderBy(desc(creativeGenerationBatches.createdAt))
+      .limit(1);
+    if (!row) return undefined;
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async replace(
+    batchId: string,
+    expectedVersion: number,
+    input: CreativeGenerationBatch,
+  ): Promise<Versioned<CreativeGenerationBatch>> {
+    const record = creativeGenerationBatchSchema.parse(input);
+    const [row] = await this.db
+      .update(creativeGenerationBatches)
+      .set({
+        kind: record.kind,
+        status: record.status,
+        inputHash: record.inputHash,
+        record,
+        version: expectedVersion + 1,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(creativeGenerationBatches.batchId, batchId),
+          eq(creativeGenerationBatches.version, expectedVersion),
+        ),
+      )
+      .returning();
+    if (!row) return throwVersionConflict(this.db, 'creative_generation_batch', batchId, expectedVersion);
+    return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+}
+
+export class CreativeWorkflowGroupRepository {
+  constructor(private readonly db: OneCrewDatabase) {}
+
+  private async validateShotIds(projectId: string, shotIds: string[]): Promise<void> {
+    const rows = await this.db
+      .select({ shotId: shots.shotId, projectId: shots.projectId })
+      .from(shots)
+      .where(inArray(shots.shotId, shotIds));
+    const validIds = new Set(rows.filter((row) => row.projectId === projectId).map((row) => row.shotId));
+    const invalidIds = shotIds.filter((shotId) => !validIds.has(shotId));
+    if (invalidIds.length > 0) {
+      throw new InvalidCreativeWorkflowGroupError(
+        `Workflow group references missing or cross-project shots: ${invalidIds.join(', ')}`,
+      );
+    }
+  }
+
+  async create(
+    input: CreativeWorkflowGroup,
+  ): Promise<Versioned<CreativeWorkflowGroup> & { replayed: boolean }> {
+    const record = creativeWorkflowGroupSchema.parse(input);
+    await this.validateShotIds(record.projectId, record.shotIds);
+    const [row] = await this.db
+      .insert(creativeWorkflowGroups)
+      .values({
+        groupId: record.groupId,
+        projectId: record.projectId,
+        name: record.name,
+        generationKind: record.generationKind,
+        record,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (row) {
+      return { value: creativeWorkflowGroupSchema.parse(row.record), version: row.version, replayed: false };
+    }
+
+    let existing: Versioned<CreativeWorkflowGroup>;
+    try {
+      existing = await this.get(record.groupId);
+    } catch (error) {
+      if (error instanceof RecordNotFoundError) {
+        throw new InvalidCreativeWorkflowGroupError(
+          `A workflow group named "${record.name}" already exists in this project`,
+        );
+      }
+      throw error;
+    }
+    const comparable = (value: CreativeWorkflowGroup) => ({
+      projectId: value.projectId,
+      name: value.name,
+      description: value.description,
+      shotIds: value.shotIds,
+      generationKind: value.generationKind,
+      missingOnly: value.missingOnly,
+      concurrency: value.concurrency,
+      createdBy: value.createdBy,
+    });
+    if (createInputHash(comparable(existing.value)) !== createInputHash(comparable(record))) {
+      throw new IdempotencyConflictError('creative_workflow_group', record.groupId);
+    }
+    return { ...existing, replayed: true };
+  }
+
+  async get(groupId: string): Promise<Versioned<CreativeWorkflowGroup>> {
+    const [row] = await this.db
+      .select()
+      .from(creativeWorkflowGroups)
+      .where(eq(creativeWorkflowGroups.groupId, groupId));
+    if (!row) throw new RecordNotFoundError('creative_workflow_group', groupId);
+    return { value: creativeWorkflowGroupSchema.parse(row.record), version: row.version };
+  }
+
+  async listForProject(projectId: string): Promise<Array<Versioned<CreativeWorkflowGroup>>> {
+    const rows = await this.db
+      .select()
+      .from(creativeWorkflowGroups)
+      .where(eq(creativeWorkflowGroups.projectId, projectId))
+      .orderBy(desc(creativeWorkflowGroups.updatedAt));
+    return rows.map((row) => ({
+      value: creativeWorkflowGroupSchema.parse(row.record),
+      version: row.version,
+    }));
+  }
+
+  async attachBatch(
+    groupId: string,
+    expectedVersion: number,
+    batchId: string,
+  ): Promise<Versioned<CreativeWorkflowGroup>> {
+    const [current, batch] = await Promise.all([this.get(groupId), this.getBatch(batchId)]);
+    assertExpectedVersion(expectedVersion, current.version);
+    if (batch.projectId !== current.value.projectId) {
+      throw new InvalidCreativeWorkflowGroupError('Workflow group and generation batch belong to different projects');
+    }
+    const updatedAt = new Date();
+    const next = creativeWorkflowGroupSchema.parse({
+      ...current.value,
+      lastBatchId: batchId,
+      updatedAt: updatedAt.toISOString(),
+    });
+    const [row] = await this.db
+      .update(creativeWorkflowGroups)
+      .set({ record: next, version: expectedVersion + 1, updatedAt })
+      .where(
+        and(
+          eq(creativeWorkflowGroups.groupId, groupId),
+          eq(creativeWorkflowGroups.version, expectedVersion),
+        ),
+      )
+      .returning();
+    if (!row) return throwVersionConflict(this.db, 'creative_workflow_group', groupId, expectedVersion);
+    return { value: creativeWorkflowGroupSchema.parse(row.record), version: row.version };
+  }
+
+  private async getBatch(batchId: string): Promise<CreativeGenerationBatch> {
+    const [row] = await this.db
+      .select({ record: creativeGenerationBatches.record })
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.batchId, batchId));
+    if (!row) throw new RecordNotFoundError('creative_generation_batch', batchId);
+    return creativeGenerationBatchSchema.parse(row.record);
   }
 }
 
@@ -1073,6 +2169,7 @@ export interface AuditLogInput {
     | 'feishu_base_sync'
     | 'provider_gateway'
     | 'provider_callback'
+    | 'creative_studio'
     | 'workflow';
   eventId: string;
   action: string;
@@ -1386,9 +2483,12 @@ export class ProviderCallbackRepository {
 export function createRepositories(db: OneCrewDatabase) {
   return {
     projects: new ProjectRepository(db),
+    creative: new CreativeRepository(db),
     shots: new ShotRepository(db),
     assets: new AssetRepository(db),
     jobs: new JobRepository(db),
+    creativeGenerationBatches: new CreativeGenerationBatchRepository(db),
+    creativeWorkflowGroups: new CreativeWorkflowGroupRepository(db),
     qc: new QcRepository(db),
     qcRuns: new QcRunRepository(db),
     localizationRuns: new LocalizationRunRepository(db),

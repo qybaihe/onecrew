@@ -7,6 +7,7 @@ import {
   type ProbeResult,
   type ReadinessProbe,
 } from './readiness.js';
+import { registerCreativeRoutes, type CreativeRouteOptions } from './creative-routes.js';
 import { registerFeishuRoutes, type FeishuRouteOptions } from './feishu-routes.js';
 import { registerLocalizationRoutes, type LocalizationRouteOptions } from './localization-routes.js';
 import { registerProviderRoutes, type ProviderRouteOptions } from './provider-routes.js';
@@ -24,6 +25,7 @@ export interface CreateAppOptions {
   env?: AppEnv;
   probes?: ReadinessProbe[];
   logger?: boolean;
+  creatives?: CreativeRouteOptions;
   feishu?: FeishuRouteOptions;
   localizations?: LocalizationRouteOptions;
   providers?: ProviderRouteOptions;
@@ -73,6 +75,11 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
       done(error as Error);
     }
   });
+  app.addContentTypeParser(
+    ['application/zip', 'application/x-zip-compressed'],
+    { parseAs: 'buffer' },
+    (_request, body, done) => done(null, body),
+  );
 
   app.get('/healthz', { logLevel: 'silent' }, async () => ({
     status: 'ok' as const,
@@ -97,6 +104,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
     };
   });
 
+  registerCreativeRoutes(app, options.creatives);
   registerFeishuRoutes(app, options.feishu);
   registerLocalizationRoutes(app, options.localizations);
   registerProviderRoutes(app, options.providers);

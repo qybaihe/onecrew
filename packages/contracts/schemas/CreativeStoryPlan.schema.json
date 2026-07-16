@@ -1,0 +1,219 @@
+{
+  "$id": "https://onecrew.local/schemas/CreativeStoryPlan.schema.json",
+  "title": "CreativeStoryPlan",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "logline": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "episodes": {
+      "minItems": 1,
+      "maxItems": 12,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "synopsis": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "scriptContent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200000
+          },
+          "durationSec": {
+            "type": "integer",
+            "minimum": 15,
+            "maximum": 7200
+          },
+          "characterNames": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "sceneNames": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "propNames": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          }
+        },
+        "required": [
+          "title",
+          "synopsis",
+          "scriptContent",
+          "durationSec",
+          "characterNames",
+          "sceneNames",
+          "propNames"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "characters": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "personality": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "appearance": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "voiceStyle": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "identityAnchors": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            }
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "personality",
+          "appearance",
+          "voiceStyle",
+          "identityAnchors"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "scenes": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "location": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "timeOfDay": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "atmosphere": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "lightingStyle": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "location",
+          "timeOfDay",
+          "atmosphere",
+          "lightingStyle"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "props": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 20000
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "category",
+          "prompt"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "title",
+    "logline",
+    "episodes",
+    "characters",
+    "scenes",
+    "props"
+  ],
+  "additionalProperties": false
+}

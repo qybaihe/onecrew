@@ -1,0 +1,58 @@
+{
+  "$id": "https://onecrew.local/schemas/CreativeWorkflowGroupCreateRequest.schema.json",
+  "title": "CreativeWorkflowGroupCreateRequest",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "shotIds": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+      }
+    },
+    "generationKind": {
+      "type": "string",
+      "enum": [
+        "image",
+        "video"
+      ]
+    },
+    "missingOnly": {
+      "type": "boolean"
+    },
+    "concurrency": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "createdBy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    }
+  },
+  "required": [
+    "name",
+    "shotIds",
+    "generationKind",
+    "missingOnly",
+    "concurrency",
+    "createdBy"
+  ],
+  "additionalProperties": false
+}

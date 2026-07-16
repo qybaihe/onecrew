@@ -138,6 +138,44 @@ function mockStructuredOutput(input: LlmProviderRequest): Record<string, unknown
       return parsed as Record<string, unknown>;
     }
   }
+  if (input.outputSchema?.title === 'OneCrewCreativeStoryPlan') {
+    const episodeCount = Math.min(12, Math.max(1, Number(input.prompt.match(/必须输出\s+(\d+)\s+集/)?.[1] ?? 1)));
+    return {
+      title: '星门回响（Mock 规划）',
+      logline: '新导航员带着星图碎片抵达星门，迫使守门人作出选择。',
+      episodes: Array.from({ length: episodeCount }, (_, index) => ({
+        title: `续章 ${index + 1}：星图回响`,
+        synopsis: `云岚在第 ${index + 1} 次星门脉冲中找到新的坐标线索。`,
+        scriptContent: `【星门回廊】\n云岚握紧星图碎片：第 ${index + 1} 组坐标出现了。\n星门发出青蓝脉冲，新的航线在空中展开。`,
+        durationSec: 60,
+        characterNames: ['云岚'],
+        sceneNames: ['星门回廊'],
+        propNames: ['星图碎片'],
+      })),
+      characters: [{
+        name: '云岚',
+        role: '星图导航员',
+        personality: '敏锐、克制、在危险中保持好奇',
+        appearance: '深色短发，青绿色导航披肩，左耳佩戴星轨终端',
+        voiceStyle: '清晰、冷静、略带紧迫感',
+        identityAnchors: ['深色短发', '青绿色导航披肩', '左耳星轨终端'],
+      }],
+      scenes: [{
+        name: '星门回廊',
+        description: '环绕星门核心的悬浮金属回廊，墙面流动着古老坐标。',
+        location: '星门内部',
+        timeOfDay: '永夜',
+        atmosphere: '寂静、神秘、逐步升温',
+        lightingStyle: '青蓝脉冲光与暖色人物轮廓光',
+      }],
+      props: [{
+        name: '星图碎片',
+        description: '能够响应星门脉冲的半透明坐标载体。',
+        category: '关键线索',
+        prompt: '半透明晶体星图碎片，内部有细密金色航线流动',
+      }],
+    };
+  }
   return {
     mock: true,
     operation: input.operation,
