@@ -35,6 +35,7 @@ export const compositionIdSchema = z.enum([
   'Teaser15Vertical',
   'Bumper6',
   'MotionPoster',
+  'PipelineSmoke',
 ]);
 export const assetTypeSchema = z.enum([
   'character',
@@ -383,6 +384,8 @@ export const renderShotSchema = z
     videoUri: z.url(),
     inFrame: z.number().int().nonnegative(),
     outFrame: z.number().int().positive(),
+    sourceStartFrame: z.number().int().nonnegative().optional(),
+    sourceEndFrame: z.number().int().positive().optional(),
     crop: z
       .object({
         x: z.number().finite(),
@@ -391,12 +394,35 @@ export const renderShotSchema = z
       })
       .optional(),
   })
-  .refine((shot) => shot.outFrame > shot.inFrame, {
-    message: 'outFrame must be greater than inFrame',
-    path: ['outFrame'],
+  .superRefine((shot, context) => {
+    if (shot.outFrame <= shot.inFrame) {
+      context.addIssue({
+        code: 'custom',
+        message: 'outFrame must be greater than inFrame',
+        path: ['outFrame'],
+      });
+    }
+    if ((shot.sourceStartFrame === undefined) !== (shot.sourceEndFrame === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'sourceStartFrame and sourceEndFrame must be provided together',
+        path: [shot.sourceStartFrame === undefined ? 'sourceStartFrame' : 'sourceEndFrame'],
+      });
+    }
+    if (
+      shot.sourceStartFrame !== undefined &&
+      shot.sourceEndFrame !== undefined &&
+      shot.sourceEndFrame <= shot.sourceStartFrame
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'sourceEndFrame must be greater than sourceStartFrame',
+        path: ['sourceEndFrame'],
+      });
+    }
   });
 
-export const renderManifestSchema = z.object({
+const renderManifestBaseSchema = z.object({
   renderId: idSchema,
   renderRevision: z.number().int().nonnegative().optional(),
   projectId: idSchema,
@@ -413,6 +439,177 @@ export const renderManifestSchema = z.object({
     width: z.number().int().positive(),
     height: z.number().int().positive(),
   }),
+});
+
+function renderMediaIdentity(uri: string): string {
+  const parsed = new URL(uri);
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString();
+}
+
+function timelineCoverageMs(lines: Array<{ startMs: number; endMs: number }>): number {
+  const sorted = lines
+    .map((line) => [line.startMs, line.endMs] as const)
+    .sort((left, right) => left[0] - right[0]);
+  let covered = 0;
+  let start: number | undefined;
+  let end: number | undefined;
+  for (const [nextStart, nextEnd] of sorted) {
+    if (start === undefined || end === undefined) {
+      start = nextStart;
+      end = nextEnd;
+    } else if (nextStart <= end) {
+      end = Math.max(end, nextEnd);
+    } else {
+      covered += end - start;
+      start = nextStart;
+      end = nextEnd;
+    }
+  }
+  return covered + (start === undefined || end === undefined ? 0 : end - start);
+}
+
+function longestTimelineGapMs(
+  lines: Array<{ startMs: number; endMs: number }>,
+  durationMs: number,
+): number {
+  const sorted = [...lines].sort((left, right) => left.startMs - right.startMs);
+  let cursor = 0;
+  let longest = 0;
+  for (const line of sorted) {
+    longest = Math.max(longest, line.startMs - cursor);
+    cursor = Math.max(cursor, line.endMs);
+  }
+  return Math.max(longest, durationMs - cursor);
+}
+
+export const renderManifestSchema = renderManifestBaseSchema.superRefine((manifest, context) => {
+  const durationFrames = Math.max(...manifest.shots.map((shot) => shot.outFrame));
+  const durationSec = durationFrames / manifest.fps;
+  const durationMs = durationSec * 1_000;
+  const shotIds = new Set(manifest.shots.map((shot) => shot.shotId));
+  if (shotIds.size !== manifest.shots.length) {
+    context.addIssue({ code: 'custom', path: ['shots'], message: 'shot IDs must be unique' });
+  }
+  for (const [index, line] of manifest.localePack.lines.entries()) {
+    if (!shotIds.has(line.shotId)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['localePack', 'lines', index, 'shotId'],
+        message: `references unknown shot ${line.shotId}`,
+      });
+    }
+    if (line.endMs > durationMs) {
+      context.addIssue({
+        code: 'custom',
+        path: ['localePack', 'lines', index, 'endMs'],
+        message: 'exceeds composition duration',
+      });
+    }
+  }
+  if (manifest.compositionId === 'PipelineSmoke') {
+    if (durationSec < 1 || durationSec > 15) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shots'],
+        message: 'PipelineSmoke duration must be between 1 and 15 seconds',
+      });
+    }
+    return;
+  }
+  if (manifest.compositionId !== 'EpisodeMaster' && manifest.compositionId !== 'EpisodeLocalized') return;
+  if (durationSec < 60 || durationSec > 90) {
+    context.addIssue({
+      code: 'custom',
+      path: ['shots'],
+      message: 'episode duration must be between 60 and 90 seconds',
+    });
+  }
+  const sortedShots = [...manifest.shots].sort((left, right) => left.inFrame - right.inFrame);
+  if (sortedShots[0]?.inFrame !== 0) {
+    context.addIssue({ code: 'custom', path: ['shots'], message: 'episode timeline must start at frame 0' });
+  }
+  for (let index = 1; index < sortedShots.length; index += 1) {
+    if (sortedShots[index]!.inFrame !== sortedShots[index - 1]!.outFrame) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shots'],
+        message: `episode timeline must be contiguous between ${sortedShots[index - 1]!.shotId} and ${sortedShots[index]!.shotId}`,
+      });
+      break;
+    }
+  }
+  for (const [index, shot] of manifest.shots.entries()) {
+    if (shot.sourceStartFrame === undefined || shot.sourceEndFrame === undefined) continue;
+    const playbackRate =
+      (shot.sourceEndFrame - shot.sourceStartFrame) / (shot.outFrame - shot.inFrame);
+    if (playbackRate < 0.8) {
+      context.addIssue({
+        code: 'custom',
+        path: ['shots', index, 'sourceEndFrame'],
+        message: 'would stretch source media by more than 25%; regenerate a longer source',
+      });
+    }
+  }
+  const durationByAsset = new Map<string, number>();
+  for (const shot of manifest.shots) {
+    const identity = renderMediaIdentity(shot.videoUri);
+    durationByAsset.set(identity, (durationByAsset.get(identity) ?? 0) + shot.outFrame - shot.inFrame);
+  }
+  const minimumDistinctAssets = Math.max(4, Math.ceil(durationSec / 15));
+  if (durationByAsset.size < minimumDistinctAssets) {
+    context.addIssue({
+      code: 'custom',
+      path: ['shots'],
+      message: `episode requires at least ${minimumDistinctAssets} distinct video assets; received ${durationByAsset.size}`,
+    });
+  }
+  const duplicateAssetShotRatio = 1 - durationByAsset.size / manifest.shots.length;
+  if (duplicateAssetShotRatio > 0.4) {
+    context.addIssue({
+      code: 'custom',
+      path: ['shots'],
+      message: `duplicate-asset shot ratio ${(duplicateAssetShotRatio * 100).toFixed(1)}% exceeds 40%`,
+    });
+  }
+  const largestAssetRatio = Math.max(0, ...durationByAsset.values()) / Math.max(1, durationFrames);
+  if (largestAssetRatio > 0.35) {
+    context.addIssue({
+      code: 'custom',
+      path: ['shots'],
+      message: `one video asset occupies ${(largestAssetRatio * 100).toFixed(1)}% of the episode; maximum is 35%`,
+    });
+  }
+  const dialogueDensity = timelineCoverageMs(manifest.localePack.lines) / Math.max(1, durationMs);
+  if (dialogueDensity < 0.12) {
+    context.addIssue({
+      code: 'custom',
+      path: ['localePack', 'lines'],
+      message: `episode dialogue density ${(dialogueDensity * 100).toFixed(1)}% is below the 12% minimum`,
+    });
+  }
+  const dialogueShotCount = new Set(manifest.localePack.lines.map((line) => line.shotId)).size;
+  const minimumDialogueShots = Math.min(
+    manifest.shots.length,
+    Math.max(3, Math.ceil(manifest.shots.length * 0.3)),
+  );
+  if (dialogueShotCount < minimumDialogueShots) {
+    context.addIssue({
+      code: 'custom',
+      path: ['localePack', 'lines'],
+      message: `episode dialogue must cover at least ${minimumDialogueShots} shots; received ${dialogueShotCount}`,
+    });
+  }
+  const longestGapSec = longestTimelineGapMs(manifest.localePack.lines, durationMs) / 1_000;
+  const maximumGapSec = Math.max(18, durationSec * 0.35);
+  if (longestGapSec > maximumGapSec) {
+    context.addIssue({
+      code: 'custom',
+      path: ['localePack', 'lines'],
+      message: `episode contains a ${longestGapSec.toFixed(1)}s dialogue gap; maximum is ${maximumGapSec.toFixed(1)}s`,
+    });
+  }
 });
 
 export const renderSubmissionSchema = z.object({
@@ -671,11 +868,14 @@ export const technicalQcExpectationSchema = z.object({
   colorSpace: z.string().min(1).optional(),
   maxBlackDurationSec: z.number().nonnegative().max(60).default(0.75),
   maxFreezeDurationSec: z.number().nonnegative().max(60).default(1.5),
+  ignoreFreezeTailSec: z.number().nonnegative().max(10).default(0),
   maxSilenceDurationSec: z.number().nonnegative().max(600).default(2),
   minIntegratedLufs: z.number().min(-100).max(0).optional(),
   maxIntegratedLufs: z.number().min(-100).max(0).optional(),
   maxTruePeakDbtp: z.number().min(-100).max(20).optional(),
   maxBrightnessJump: z.number().positive().max(255).default(70),
+  minSceneChanges: z.number().int().nonnegative().max(10_000).optional(),
+  minVisualVariationRatio: z.number().min(0).max(1).optional(),
   subtitleCues: z
     .array(
       z.object({
@@ -709,6 +909,9 @@ export const technicalQcReportSchema = z.object({
   integratedLufs: z.number().finite().optional(),
   truePeakDbtp: z.number().finite().optional(),
   maxBrightnessJump: z.number().finite().nonnegative().optional(),
+  sceneChanges: z.number().int().nonnegative().optional(),
+  sampledFrameCount: z.number().int().nonnegative().optional(),
+  visualVariationRatio: z.number().min(0).max(1).optional(),
   checks: z.array(technicalQcCheckSchema).min(1),
   analyzedAt: isoTimestampSchema,
 });

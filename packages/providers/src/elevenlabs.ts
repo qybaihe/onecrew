@@ -19,6 +19,7 @@ import type {
 
 export interface ProviderMediaSink {
   put(input: { key: string; bytes: Uint8Array; contentType: string }): Promise<{ uri: string }>;
+  get?(uri: string): Promise<{ bytes: Uint8Array; contentType: string; key: string }>;
 }
 
 export interface ElevenLabsConfig {

@@ -1,6 +1,7 @@
 import { loadEnv } from '@onecrew/config';
 import { projectSpecSchema, type RenderManifest } from '@onecrew/contracts';
 import { createDatabase, createRepositories } from '@onecrew/db';
+import { createInputHash } from '@onecrew/domain';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { RenderOrchestrator } from '../src/render-orchestrator.js';
@@ -14,12 +15,18 @@ const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const storedKeys: string[] = [];
 let engineCalls = 0;
 let cancelAborted = false;
+const retryAttempts = new Map<string, number>();
 const orchestrator = new RenderOrchestrator(
   repositories,
   queue,
   {
     async render(manifest, mode, options) {
       engineCalls += 1;
+      if (manifest.renderId.startsWith('render_retry_')) {
+        const attempt = (retryAttempts.get(manifest.renderId) ?? 0) + 1;
+        retryAttempts.set(manifest.renderId, attempt);
+        if (attempt <= 2) throw new Error('fixture render failure before persisted replay');
+      }
       if (manifest.renderId.startsWith('render_cancel_')) {
         await new Promise<never>((_resolve, reject) => {
           const abort = () => {
@@ -105,15 +112,27 @@ function manifest(projectId: string, renderId: string): RenderManifest {
   };
 }
 
-async function waitForStatus(renderId: string, status: string): Promise<void> {
+async function waitForStatus(renderId: string, status: string, failFast = true): Promise<void> {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     const current = await repositories.renders.get(renderId);
     if (current.value.status === status) return;
-    if (current.value.status === 'failed') throw new Error(current.value.errorMessage ?? 'Render failed');
+    if (failFast && current.value.status === 'failed') {
+      throw new Error(current.value.errorMessage ?? 'Render failed');
+    }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error(`Timed out waiting for ${renderId} to become ${status}`);
+}
+
+async function waitForQueueState(renderId: string, state: string): Promise<void> {
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const job = await queue.queue.getJob(renderId);
+    if (job && (await job.getState()) === state) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`Timed out waiting for render queue job ${renderId} to become ${state}`);
 }
 
 beforeAll(async () => {
@@ -128,6 +147,8 @@ afterAll(async () => {
 
 describe('Remotion render queue with PostgreSQL and Redis', () => {
   it('renders, stores, replays and reuses semantic render cache', async () => {
+    const beforeCalls = engineCalls;
+    const beforeStored = storedKeys.length;
     const projectId = `prj_render_${suffix}`;
     await repositories.projects.create(
       projectSpecSchema.parse({
@@ -174,8 +195,10 @@ describe('Remotion render queue with PostgreSQL and Redis', () => {
       `idem_render_cached_${suffix}`,
     );
     expect(cached).toMatchObject({ status: 'succeeded', cached: true, replayed: false });
-    expect(engineCalls).toBe(1);
-    expect(storedKeys).toEqual([`renders/${projectId}/${first.renderId}/preview.mp4`]);
+    expect(engineCalls - beforeCalls).toBe(1);
+    expect(storedKeys.slice(beforeStored)).toEqual([
+      `renders/${projectId}/${first.renderId}/preview.mp4`,
+    ]);
   });
 
   it('cancels an active render through the persisted abort poll', async () => {
@@ -212,5 +235,85 @@ describe('Remotion render queue with PostgreSQL and Redis', () => {
     const cancelled = await repositories.renders.get(renderId);
     expect(cancelled.value.status).toBe('cancelled');
     expect(cancelled.value.outputUri).toBeUndefined();
+  });
+
+  it('recovers a render left running by an interrupted worker', async () => {
+    const projectId = `prj_render_recovery_${suffix}`;
+    await repositories.projects.create(
+      projectSpecSchema.parse({
+        projectId,
+        nameZh: '崩溃恢复',
+        nameEn: 'Render Recovery',
+        synopsis: 'Interrupted worker recovery fixture.',
+        audience: 'test',
+        genres: ['test'],
+        ownerOpenId: 'ou_render_recovery',
+        locales: ['zh-CN'],
+        aspectRatios: ['1:1'],
+        budgetLimitCny: 10,
+        status: 'draft',
+      }),
+    );
+    const renderId = `render_recovery_${suffix}`;
+    const recoveryManifest = manifest(projectId, renderId);
+    recoveryManifest.localePack.marketingCopy = [`崩溃恢复 ${suffix}`];
+    const now = new Date().toISOString();
+    const created = await repositories.renders.create({
+      renderId,
+      projectId,
+      manifest: recoveryManifest,
+      renderMode: 'preview',
+      status: 'queued',
+      manifestHash: createInputHash(recoveryManifest),
+      designPackVersion: recoveryManifest.designPack.version,
+      codeVersion: 'render-integration-v1',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await repositories.renders.transition(renderId, created.version, 'running');
+
+    await queue.enqueue(renderId);
+    await waitForStatus(renderId, 'succeeded');
+    const recovered = await repositories.renders.get(renderId);
+    expect(recovered.value.status).toBe('succeeded');
+    expect(recovered.value).not.toHaveProperty('errorCode');
+    expect(recovered.value).not.toHaveProperty('errorMessage');
+  });
+
+  it('requeues a persisted failed render when the same submission is replayed', async () => {
+    const projectId = `prj_render_retry_${suffix}`;
+    await repositories.projects.create(
+      projectSpecSchema.parse({
+        projectId,
+        nameZh: '失败重试',
+        nameEn: 'Render Retry',
+        synopsis: 'Failed render replay fixture.',
+        audience: 'test',
+        genres: ['test'],
+        ownerOpenId: 'ou_render_retry',
+        locales: ['zh-CN'],
+        aspectRatios: ['1:1'],
+        budgetLimitCny: 10,
+        status: 'draft',
+      }),
+    );
+    const renderId = `render_retry_${suffix}`;
+    const retryManifest = manifest(projectId, renderId);
+    retryManifest.localePack.marketingCopy = [`失败重试 ${suffix}`];
+    const beforeCalls = engineCalls;
+    await orchestrator.submit(
+      { manifest: retryManifest, mode: 'preview' },
+      `idem_render_retry_${suffix}`,
+    );
+    await waitForStatus(renderId, 'failed');
+    await waitForQueueState(renderId, 'failed');
+
+    const replay = await orchestrator.submit(
+      { manifest: retryManifest, mode: 'preview' },
+      `idem_render_retry_${suffix}`,
+    );
+    expect(replay).toMatchObject({ renderId, status: 'queued', replayed: true, cached: false });
+    await waitForStatus(renderId, 'succeeded', false);
+    expect(engineCalls - beforeCalls).toBe(3);
   });
 });

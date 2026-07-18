@@ -57,7 +57,7 @@ async function waitFor<T>(
     const body = await api<T>(pathname);
     const status = readStatus(body);
     if (status === 'succeeded') return body;
-    if (status === 'failed' || status === 'cancelled') {
+    if (status === 'failed' || status === 'cancelled' || status === 'waiting_human') {
       throw new Error(`${pathname} reached ${status}: ${JSON.stringify(body)}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -293,7 +293,10 @@ try {
     localePack: localization.localePack,
     shots: localization.localizedShots,
   });
-  const manifests = [zhEpisode, enEpisode, ...campaign.variants];
+  const manifests: RenderManifest[] = [zhEpisode, enEpisode, ...campaign.variants].map((manifest) => ({
+    ...manifest,
+    renderRevision: 2,
+  }));
   await Promise.all(
     manifests.map((manifest) =>
       api('/v1/renders', {
@@ -315,9 +318,12 @@ try {
   const qcSource = completedRenders.find(
     (render) =>
       render.record.manifest.locale === 'zh-CN' &&
-      render.record.manifest.compositionId === 'Bumper6',
+      render.record.manifest.compositionId === 'EpisodeMaster',
   );
-  if (!qcSource?.record.outputUri) throw new Error('Chinese Bumper6 render is required for QC');
+  if (!qcSource?.record.outputUri) throw new Error('Chinese EpisodeMaster render is required for QC');
+  const qcDurationSec =
+    Math.max(...qcSource.record.manifest.shots.map((shot) => shot.outFrame)) /
+    qcSource.record.manifest.fps;
   const qcAccepted = await api<{ qc_run_id: string }>('/v1/qc/run', {
     method: 'POST',
     headers: { 'idempotency-key': `idem_${smokeVersion}_qc` },
@@ -326,18 +332,33 @@ try {
       sourceRenderId: qcSource.record.renderId,
       mediaUri: qcSource.record.outputUri,
       mediaType: 'video',
-      expectedDescription: 'OneCrew branded six-second Chinese campaign bumper with subtitle-safe CTA.',
-      criteria: ['brand consistency', 'subtitle safe area', 'audio and visual continuity', 'compliance'],
+      expectedDescription: 'OneCrew full Chinese episode assembled from ten distinct narrative shots with timed dialogue.',
+      criteria: [
+        'narrative shot variety',
+        'low repetition',
+        'dialogue coverage',
+        'subtitle safe area',
+        'audio and visual continuity',
+        'compliance',
+      ],
       technical: {
-        width: 640,
-        height: 640,
+        width: renderMode === 'preview' ? 640 : qcSource.record.manifest.output.width,
+        height: renderMode === 'preview' ? 360 : qcSource.record.manifest.output.height,
         fps: 30,
-        durationSec: 6.06,
-        durationToleranceSec: 0.2,
+        durationSec: qcDurationSec,
+        durationToleranceSec: 0.35,
         requireAudio: true,
-        maxBlackDurationSec: 1,
-        maxFreezeDurationSec: 6.1,
-        maxSilenceDurationSec: 6.1,
+        maxBlackDurationSec: 0.75,
+        maxFreezeDurationSec: 1.5,
+        ignoreFreezeTailSec: 4.2,
+        maxSilenceDurationSec: 18,
+        minSceneChanges: Math.max(3, Math.floor(sharedShots.length / 2)),
+        minVisualVariationRatio: 0.9,
+        subtitleCues: sourcePack.lines.map((line) => ({
+          lineId: line.lineId,
+          startMs: line.startMs,
+          endMs: line.endMs,
+        })),
       },
       route: 'primary',
       qualityAttempt: 1,

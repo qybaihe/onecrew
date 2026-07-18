@@ -35,4 +35,15 @@ describe('server Remotion renderer', () => {
     expect(media.bytes.byteLength).toBeGreaterThan(5_000);
     expect(Buffer.from(media.bytes.subarray(4, 8)).toString('ascii')).toBe('ftyp');
   });
+
+  it('renders the isolated short PipelineSmoke composition without episode padding', async () => {
+    const media = await engine.render(createFixtureManifest('PipelineSmoke'), 'preview');
+    expect(media).toMatchObject({
+      contentType: 'video/mp4',
+      width: 640,
+      height: 360,
+      durationInFrames: 180,
+    });
+    expect(media.bytes.byteLength).toBeGreaterThan(5_000);
+  });
 });

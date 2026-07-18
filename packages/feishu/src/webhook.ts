@@ -61,27 +61,6 @@ export function parseFeishuWebhook(
   headers: FeishuWebhookHeaders,
   security: FeishuWebhookSecurity,
 ): Record<string, unknown> {
-  if (security.encryptKey) {
-    if (!headers.timestamp || !headers.nonce || !headers.signature) {
-      throw new FeishuWebhookSecurityError('Missing Feishu signature headers');
-    }
-    const timestampMs = Number(headers.timestamp) * 1_000;
-    const nowMs = security.nowMs ?? Date.now();
-    const maxSkewMs = (security.maxClockSkewSec ?? 300) * 1_000;
-    if (!Number.isFinite(timestampMs) || Math.abs(nowMs - timestampMs) > maxSkewMs) {
-      throw new FeishuWebhookSecurityError('Feishu request timestamp is outside the replay window');
-    }
-    const expected = calculateFeishuSignature(
-      headers.timestamp,
-      headers.nonce,
-      security.encryptKey,
-      rawBody,
-    );
-    if (!secureEqual(expected, headers.signature)) {
-      throw new FeishuWebhookSecurityError('Invalid Feishu request signature');
-    }
-  }
-
   let payload = JSON.parse(rawBody) as Record<string, unknown>;
   if (typeof payload.encrypt === 'string') {
     if (!security.encryptKey) {
@@ -91,6 +70,34 @@ export function parseFeishuWebhook(
       string,
       unknown
     >;
+  }
+
+  const isUrlVerification =
+    typeof payload.challenge === 'string' &&
+    (payload.type === 'url_verification' || typeof payload.token === 'string');
+  const hasNoSignatureHeaders = !headers.timestamp && !headers.nonce && !headers.signature;
+
+  if (security.encryptKey) {
+    if (!(isUrlVerification && hasNoSignatureHeaders) && (!headers.timestamp || !headers.nonce || !headers.signature)) {
+      throw new FeishuWebhookSecurityError('Missing Feishu signature headers');
+    }
+    if (!(isUrlVerification && hasNoSignatureHeaders)) {
+      const timestampMs = Number(headers.timestamp) * 1_000;
+      const nowMs = security.nowMs ?? Date.now();
+      const maxSkewMs = (security.maxClockSkewSec ?? 300) * 1_000;
+      if (!Number.isFinite(timestampMs) || Math.abs(nowMs - timestampMs) > maxSkewMs) {
+        throw new FeishuWebhookSecurityError('Feishu request timestamp is outside the replay window');
+      }
+      const expected = calculateFeishuSignature(
+        headers.timestamp!,
+        headers.nonce!,
+        security.encryptKey,
+        rawBody,
+      );
+      if (!secureEqual(expected, headers.signature!)) {
+        throw new FeishuWebhookSecurityError('Invalid Feishu request signature');
+      }
+    }
   }
 
   if (security.verificationToken) {

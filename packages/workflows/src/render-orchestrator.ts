@@ -86,7 +86,9 @@ export class RenderOrchestrator {
       if (existingHash !== requestHash) {
         throw new IdempotencyConflictError(scope, submission.manifest.renderId);
       }
-      if (existing.value.status === 'queued') await this.queue.enqueue(existing.value.renderId);
+      if (existing.value.status === 'queued' || existing.value.status === 'failed') {
+        await this.queue.enqueue(existing.value.renderId);
+      }
       return accepted(
         existing.value,
         true,
@@ -159,6 +161,12 @@ export class RenderOrchestrator {
         renderId,
         ...(current.value.outputUri ? { outputUri: current.value.outputUri } : {}),
       };
+    }
+    if (current.value.status === 'running') {
+      current = await this.repositories.renders.transition(renderId, current.version, 'failed', {
+        errorCode: 'RENDER_WORKER_RECOVERY',
+        errorMessage: 'Recovered a render left running by an interrupted worker',
+      });
     }
     if (current.value.status === 'failed') {
       current = await this.repositories.renders.transition(renderId, current.version, 'queued', {

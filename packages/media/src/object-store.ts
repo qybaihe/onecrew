@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export interface PutMediaInput {
   key: string;
@@ -109,6 +110,18 @@ export class S3MediaStore {
       throw new Error(`Media object size ${bytes.byteLength} is outside the allowed range`);
     }
     return { bytes, contentType: response.ContentType ?? 'application/octet-stream', key };
+  }
+
+  async presignGet(uri: string, expiresInSeconds = 3_600): Promise<string> {
+    const key = parseControlledS3Uri(uri, this.bucket);
+    if (!Number.isInteger(expiresInSeconds) || expiresInSeconds < 1 || expiresInSeconds > 604_800) {
+      throw new Error('Presigned media URL expiry must be between 1 and 604800 seconds');
+    }
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      { expiresIn: expiresInSeconds },
+    );
   }
 
   destroy(): void {

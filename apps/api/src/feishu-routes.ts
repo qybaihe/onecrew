@@ -16,6 +16,14 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function urlVerificationChallenge(payload: Record<string, unknown>): string | undefined {
+  if (typeof payload.challenge !== 'string') return undefined;
+  if (payload.type === 'url_verification' || typeof payload.token === 'string') {
+    return payload.challenge;
+  }
+  return undefined;
+}
+
 export function registerFeishuRoutes(app: FastifyInstance, options?: FeishuRouteOptions): void {
   async function parseRequest(request: {
     rawBody?: string;
@@ -42,9 +50,8 @@ export function registerFeishuRoutes(app: FastifyInstance, options?: FeishuRoute
   app.post('/v1/feishu/events', async (request, reply) => {
     try {
       const payload = await parseRequest(request);
-      if (payload.type === 'url_verification' && typeof payload.challenge === 'string') {
-        return { challenge: payload.challenge };
-      }
+      const challenge = urlVerificationChallenge(payload);
+      if (challenge) return { challenge };
       const header =
         typeof payload.header === 'object' && payload.header !== null
           ? (payload.header as Record<string, unknown>)
@@ -63,10 +70,22 @@ export function registerFeishuRoutes(app: FastifyInstance, options?: FeishuRoute
   app.post('/v1/feishu/card-actions', async (request, reply) => {
     try {
       const payload = await parseRequest(request);
+      const challenge = urlVerificationChallenge(payload);
+      if (challenge) return { challenge };
       const action = normalizeFeishuCardAction(payload);
       const result = await options!.cardActionService.handle(action);
       return { ok: true, result };
     } catch (error) {
+      request.log.warn(
+        {
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+          hasTimestamp: typeof request.headers['x-lark-request-timestamp'] === 'string',
+          hasNonce: typeof request.headers['x-lark-request-nonce'] === 'string',
+          hasSignature: typeof request.headers['x-lark-signature'] === 'string',
+        },
+        'Feishu card callback rejected',
+      );
       return sendFeishuError(reply, error);
     }
   });

@@ -2,7 +2,7 @@
 
 OneCrew 只使用 Remotion 生成正式 MP4。Open Design Adapter 只编译 Design Pack，FFmpeg 只作为编解码和 QC 媒体基础设施，两者都不是平行渲染器。服务端实现遵循 Remotion 官方的 [bundle](https://www.remotion.dev/docs/bundle)、[selectComposition](https://www.remotion.dev/docs/renderer/select-composition) 和 [renderMedia](https://www.remotion.dev/docs/renderer/render-media) 边界。
 
-## 六个固定 Composition
+## 六个交付 Composition 与隔离的 Smoke
 
 | ID | 用途 | 允许画幅 | 默认时长 |
 |---|---|---|---:|
@@ -12,8 +12,20 @@ OneCrew 只使用 Remotion 生成正式 MP4。Open Design Adapter 只编译 Desi
 | `Teaser15Vertical` | 竖版预热 | 9:16 | 15s |
 | `Bumper6` | 投放广告 | 9:16 / 1:1 | 6s |
 | `MotionPoster` | 动态海报 | 9:16 / 1:1 | Design Pack 定义，示例 6s |
+| `PipelineSmoke` | 单镜头技术验链，禁止作为正片发布 | 16:9 / 9:16 / 1:1 | 1～15s |
 
-项目不复制 Composition。每次差异只来自 `RenderManifest`、已解析 Design Pack 和 `preview | final` 模式。`calculateMetadata` 再次校验 locale、画幅、分辨率、字幕引用和时长，防止前端或 API 绕过契约。
+项目不复制 Composition。每次差异只来自 `RenderManifest`、已解析 Design Pack 和 `preview | final` 模式。`PipelineSmoke` 是独立的非交付组件，不受 60 秒正片时长约束，也不进入发布包。
+
+## 正片内容门禁
+
+`EpisodeMaster` 和 `EpisodeLocalized` 在 API 入队前即强制检查：
+
+- 60～90 秒时间轴必须从第 0 帧开始且无空洞、无重叠；
+- 至少 4 个独立视频素材，单一素材不得占正片 35% 以上，重复素材镜头比例不得超过 40%；
+- 对白时间覆盖率至少 12%，对白需覆盖至少 30% 的镜头，不允许长时间后段空转；
+- `inFrame/outFrame` 只表示成片时间轴，`sourceStartFrame/sourceEndFrame` 独立表示源视频裁切；
+- 源视频短于剧情镜头时直接失败，不循环、不复制；本地化拉伸超过 25% 也会失败；
+- 成片 QC 使用定时中心画面采样和转场检测，输出 `visualVariationRatio` 与 `sceneChanges`。
 
 公共组件完整实现 `BrandProvider` 、`SafeArea`、`ShotSequence`、`SmartCrop`、`SubtitleTrack`、`SpeakerLowerThird`、`EpisodeTitle`、`ChapterCard`、`LogoReveal`、`CTAEndCard`、`KineticHook`、`AudioBed`、`AudioDucking`、`ProgressIndicator` 和 `QCWatermark`。
 
@@ -34,14 +46,14 @@ pnpm preview:dev
 # http://127.0.0.1:4173
 ```
 
-`apps/preview` 是响应式、可键盘操作的只读 [Remotion Player](https://www.remotion.dev/docs/player) 审片页。它可切换六种 Composition，但不保存项目状态、不接收密钥、不提供审批动作。飞书仍是唯一业务控制面。
+`apps/preview` 是响应式、可键盘操作的只读 [Remotion Player](https://www.remotion.dev/docs/player) 审片页。它可切换六种交付 Composition 和一种明确标记的 Smoke，但不保存项目状态、不接收密钥、不提供审批动作。飞书仍是唯一业务控制面。
 
 Remotion 参数化原则参考官方 [Parameterized rendering](https://www.remotion.dev/docs/parameterized-rendering)；OneCrew 额外通过 Zod 和 Design Pack 不可变 URI 缩小了任意 props 的安全面。
 
 ## 本地渲染
 
 ```bash
-# 六个低分辨率审片版
+# 六个交付组件 + PipelineSmoke 的低分辨率审片版
 pnpm remotion:demo
 
 # 一个 1080×1080 无审片水印的 Final 烟雾测试
@@ -49,11 +61,19 @@ pnpm remotion:final-smoke
 
 # 官方 Studio
 pnpm remotion:studio
+
+# 使用一个真实镜头验证 TTS、本地化、短片渲染和 QC，不会补成正片
+pnpm remotion:pipeline-smoke -- <projectId> <shotId> [outputDirectory]
+
+# 使用完整剧集的多镜头真实素材生成双语正片与发布包
+pnpm remotion:real-project-e2e -- <projectId> <episodeId> [outputDirectory]
 ```
 
 输出默认写入 `outputs/remotion-stage5`。示例镜头 URI 为 `mock://`，画面会明确显示 `MOCK · shot_id`；这些证据验证渲染链路和 Design Pack，不冒充真实生成视频。
 
 Final 默认按 Manifest 的正式分辨率渲染。资源受限的本地演示可设置 `REMOTION_FINAL_MAX_DIMENSION=640`：Composition 仍在 1920×1080/1080×1920 设计空间排版，只在 Renderer 输出阶段等比缩放，因此不会造成固定像素字号和安全区漂移，也不会出现 Preview 水印。
+
+`remotion:pipeline-smoke` 和 `remotion:real-project-e2e` 会调用真实 TTS/翻译/VLM 路由，可能消耗订阅额度或产生费用。正片命令要求每个剧情镜头都已有足时长视频素材；任一素材不足都会失败关闭。
 
 ## 授权
 

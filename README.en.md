@@ -12,7 +12,7 @@ OneCrew is a Feishu-controlled, API-driven production system for bilingual Chine
 
 Remotion is the only final video renderer. PostgreSQL stores business state, S3/MinIO stores controlled media, and Redis/BullMQ runs asynchronous jobs. Feishu is the only approval control plane, while the local Studio handles project browsing, asset organization, the storyboard canvas, project import, and final review.
 
-> Current version: `0.1.0`. Stages 0–8 have been implemented and verified through a local deterministic Mock end-to-end run. Real model providers, a real Feishu tenant, and direct platform publishing require the operator's own credentials and authorization. Mock results are never presented as real provider output.
+> Current version: `0.1.0`. Stages 0–8 have been implemented and verified through a local deterministic Mock end-to-end run. On 2026-07-16, operator-supplied credentials passed minimal real smoke tests for LLM, VLM, image, video, and TTS. On 2026-07-18, a real Feishu tenant validated all six Base tables and their fields. A complete real production E2E, live Feishu callback/card workflow, and direct platform publishing remain to be verified. Credentials are never committed and Mock results are never presented as real provider output.
 
 ## Features
 
@@ -30,15 +30,15 @@ Remotion is the only final video renderer. PostgreSQL stores business state, S3/
 | Project import/export | Import structured JSON or ZIP archives with media; export portable OneCrew archives with SHA-256 integrity data | Implemented and tested |
 | Concurrent editing | Optimistic episode/entity/shot versions, 409 conflict protection, and accepted-edit auditing | Implemented and tested |
 | Design system | Parse Open Design / `DESIGN.md` and compile immutable Design Packs | Implemented |
-| Provider Gateway | Primary/Fallback routing for LLM, VLM, image, video, and TTS providers | Mock verified; Real adapters implemented |
+| Provider Gateway | Primary/Fallback routing for LLM, VLM, image, video, and TTS providers | Mock verified; all five current Real adapters smoke-tested |
 | Job system | BullMQ queues, idempotency, budget gates, retries, cancellation, and signed callbacks | Implemented and tested |
 | Asset management | Source, provider, model, seed, hash, license, and parent-child version chains | Implemented and tested |
-| Final rendering | Chinese/English episodes, 30s trailers, 15s vertical teasers, 6s bumpers, motion posters | Verified locally |
-| Automated QC | FFmpeg/ffprobe technical checks, VLM semantic checks, and one automatic repair | Implemented and tested |
+| Final rendering | Chinese/English episodes, 30s trailers, 15s vertical teasers, 6s bumpers, and motion posters; source trims are independent from composition timing | Verified locally |
+| Automated QC | Pre-queue gates reject repeated media, sparse dialogue, and timeline filler; FFmpeg measures visual variation/scene changes before VLM review | Implemented and tested |
 | Human recovery | Feishu `Approve / Regenerate / Switch provider / Manual` actions | Mock/integration verified |
 | Localization | Structured English translation, per-line TTS, duration-driven timing, and subtitles | Implemented and tested |
 | Publishing | Bilingual media manifest, Locale Packs, experiment seeds, licenses, and ZIP export | Implemented and tested |
-| Experiment write-back | PostgreSQL experiment ledger; optional Feishu Base write-back | Local path verified; real Feishu pending authorization |
+| Experiment write-back | PostgreSQL experiment ledger; optional Feishu Base write-back | Local path verified; real Base schema validated, publish-path write-back pending |
 
 ## How it works
 
@@ -133,7 +133,7 @@ Open `http://127.0.0.1:4173/#studio` to work with a project:
 8. search the **Global asset library** by character/scene/prop name, project, or role. Reusing an item creates a deterministic alias in the current project while preserving its URI, content hash, license, and source `parentAssetId`, so the current project remains independently exportable;
 9. save with the version shown in the editor. If another editor saved first, the stale update receives HTTP 409 and the Studio reloads the current server version instead of silently overwriting it;
 10. after saving the shot, click **Generate storyboard image** or **Generate video**. The Studio follows the asynchronous Job; image requests preserve entity references, the previous shot's tail frame, and continuity notes, and align `@Image1` through `@Image10` with the Provider image array. Video requests prefer the newest image version for the current shot. Successful outputs enter the asset library and link to the previous version through `parentAssetId`;
-11. read the visible `MOCK` or real-provider label. Mock mode is for local development and does not create real media. Real generation requires configured provider credentials and positive prices. Jobs that exceed the project budget enter the human gate instead of spending past the limit;
+11. read the visible `MOCK` or real-provider label. Mock mode is for local development and does not create real media. Real generation requires provider credentials and the current price parameters (subscription-quota or free routes may use `0`). Jobs that exceed the project budget enter the human gate instead of spending past the limit;
 12. select shots with the checkbox beside each card, name the set under **Shot workflow groups**, and save it. Groups are durable PostgreSQL records and return after a reload or restart. **Fill missing outputs** skips existing assets, while **Regenerate whole group** creates a new batch; both reuse the existing Provider, budget gate, BullMQ Jobs, and asset-version chain;
 13. use **Fill missing storyboard images/videos** to process every shot without the corresponding asset. Batch records live in PostgreSQL, so the latest progress returns after a page reload. You can stop unfinished Jobs or retry only failed/cancelled items;
 14. click **Run continuity QC** for an image or video already materialized in controlled MinIO/S3. OneCrew derives character identity, clothing, scene, prop, lighting, camera-axis, previous-tail-frame, and temporal-stability checks from the saved shot, then reuses the existing technical QC, VLM, and Feishu human gate. Mock placeholder URIs are never presented as checked media;
@@ -256,20 +256,33 @@ Every environment variable is documented in [.env.example](./.env.example). Neve
 PROVIDER_MODE=mock
 ```
 
-Mock mode is intended for development, CI, and demonstrations. Before switching to `real`, configure the relevant API keys, model IDs, callback secret, and positive pricing values. Missing required configuration fails closed and never silently falls back to Mock.
+Mock mode is intended for development, CI, and demonstrations. Before switching to `real`, configure the relevant API keys, model IDs, callback secret, and current pricing values. Missing required configuration fails closed and never silently falls back to Mock.
+
+Current real Provider Profile:
+
+```dotenv
+PROVIDER_MODE=real
+PROVIDER_PROFILE=opencode-agnes-mimo
+```
 
 Real provider variables:
 
-- LLM/VLM: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_VLM_MODEL`
-- Image/video: `VOLCENGINE_ARK_API_KEY`, `SEEDREAM_MODEL`, `SEEDANCE_MODEL`
-- TTS: `ELEVENLABS_API_KEY`, `ELEVENLABS_MODEL`
+- LLM: `OPENCODE_GO_API_KEY`, `OPENCODE_GO_LLM_MODEL=glm-5.2`
+- VLM: the same key and `OPENCODE_GO_VLM_MODEL=minimax-m3`
+- Image/video: `AGNES_API_KEY`, `AGNES_IMAGE_MODEL=agnes-image-2.1-flash`, `AGNES_VIDEO_MODEL=agnes-video-v2.0`
+- TTS: `MIMO_API_KEY`, `MIMO_TTS_MODEL=mimo-v2.5-tts`, and the Chinese/English voice lists
 - Signed callbacks: `PROVIDER_CALLBACK_SECRET`
+
+Marginal costs may remain `0` while requests use the OpenCode Go subscription quota, current free Agnes pricing, and MiMo's limited-free period. Update the CNY unit-price variables before enabling Zen balance fallback or after a provider resumes billing. The legacy OpenAI + Volcengine + ElevenLabs Profile remains available as an optional compatibility path.
 
 Validate the configuration with:
 
 ```bash
 pnpm providers:check
+pnpm providers:smoke-real
 ```
+
+`providers:check` validates configuration and routing without external requests. `providers:smoke-real` submits five minimal real requests and can consume subscription quota or incur charges.
 
 See [docs/provider-setup.md](./docs/provider-setup.md) for details.
 
@@ -303,6 +316,8 @@ Table definitions, minimum permissions, event subscriptions, and callback securi
 | `pnpm remotion:studio` | Open Remotion Studio |
 | `pnpm remotion:demo` | Render the fixed demo Compositions |
 | `pnpm remotion:final-smoke` | Run the Final-render smoke test |
+| `pnpm remotion:pipeline-smoke -- <projectId> <shotId>` | Run an isolated 1–15 second real single-shot pipeline smoke; it can never masquerade as an episode |
+| `pnpm remotion:real-project-e2e -- <projectId> <episodeId>` | Build bilingual masters and a release package only when the complete episode has sufficient distinct shot media, dialogue, and passing QC |
 | `pnpm demo:mock-e2e` | Run the complete Mock production loop |
 | `pnpm contracts:generate` | Regenerate JSON Schemas |
 | `pnpm db:generate` | Generate a Drizzle migration |
@@ -310,11 +325,13 @@ Table definitions, minimum permissions, event subscriptions, and callback securi
 | `pnpm db:migrate` | Apply database migrations |
 | `pnpm db:seed` | Insert idempotent demo data |
 | `pnpm design:compile` | Compile the demo Design Pack |
+| `pnpm providers:check` | Validate the Provider Profile, credential completeness, and routes without printing secrets |
+| `pnpm providers:smoke-real` | Submit the five minimal real Provider smoke tests |
 | `pnpm lint` | Run ESLint |
 | `pnpm typecheck` | Type-check the complete workspace |
 | `pnpm test:unit` | Run unit tests |
 | `pnpm test:integration` | Run tests using PostgreSQL, Redis, and MinIO |
-| `pnpm build` | Build all 17 packages/apps |
+| `pnpm build` | Build all 18 packages/apps |
 | `pnpm readme:check` | Verify bilingual README synchronization and critical commands |
 
 Recommended pre-commit checks:
@@ -369,11 +386,12 @@ docs/                   API, operations, configuration, and verification docs
 
 ## Tests and current completion
 
-Latest complete local regression (2026-07-15):
+Latest repository regression (2026-07-18):
 
-- lint, typecheck, and build passed across all 17 workspaces;
-- 92 unit tests passed;
-- 37 integration tests passed;
+- lint and build passed across all 18 workspaces, with 32 typecheck tasks passing;
+- 106 unit tests passed;
+- 43 integration tests passed;
+- PostgreSQL, Redis, and MinIO were healthy; all fields in the six real Feishu Base tables (`Project / Shot / Asset / Generation Job / QC / Overseas Experiment`) validated without creating or changing fields;
 - a fresh database applied 10 migrations and produced 23 business tables plus 10 demo shots;
 - JSON and ZIP project imports passed API smoke tests; ZIP media was written to local MinIO and bound to versioned assets; a OneCrew export containing three real MinIO assets passed browser-download and ZIP-integrity checks;
 - story planning ran through the local Mock Worker: a two-episode structured plan plus character/scene/prop definitions was previewed and appended in one transaction, project version advanced from v1 to v2, same-Job replay remained idempotent, and stale versions returned 409;
@@ -436,7 +454,7 @@ More recovery procedures are available in [docs/operations.md](./docs/operations
 - API logs redact Authorization, API keys, tokens, secrets, passwords, and cookies.
 - Provider callbacks use timestamped HMAC-SHA256 signatures and reject replayed or modified payloads.
 - `PROVIDER_MODE=real` fails closed on incomplete configuration.
-- OpenAI, Volcengine, ElevenLabs, and a real Feishu tenant have not been live-tested without user-supplied credentials.
+- OpenCode Go `glm-5.2`, `minimax-m3`, Agnes Image 2.1 Flash, Agnes Video V2.0, and MiMo V2.5 TTS were live-tested on 2026-07-16; the six real Feishu Base tables were validated on 2026-07-18, while the live callback challenge, card delivery, and four-action workflow remain to be verified.
 - The currently audited delivery path is ZIP export; direct platform publishing is not claimed as available.
 - Mock media carries a visible `MOCK · shot_id` label.
 

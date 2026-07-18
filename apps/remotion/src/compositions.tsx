@@ -60,6 +60,24 @@ export function EpisodeLocalized(input: RemotionInputProps) {
   return <EpisodeComposition {...input} />;
 }
 
+export function PipelineSmoke(input: RemotionInputProps) {
+  const props = parsed(input);
+  const { durationInFrames } = useVideoConfig();
+  return (
+    <BrandProvider design={props.design}>
+      <ShotSequence manifest={props.manifest} durationInFrames={durationInFrames} />
+      <SubtitleTrack manifest={props.manifest} />
+      <DialogueTrack manifest={props.manifest} />
+      <AudioBed
+        {...(props.manifest.musicUri ? { uri: props.manifest.musicUri } : {})}
+        durationInFrames={durationInFrames}
+        manifest={props.manifest}
+      />
+      <QCWatermark mode={props.renderMode} />
+    </BrandProvider>
+  );
+}
+
 function PromoComposition({
   input,
   endCardSeconds,

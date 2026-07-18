@@ -167,10 +167,22 @@ const formats: Record<CompositionId, { locale: Locale; aspectRatio: '16:9' | '9:
   Teaser15Vertical: { locale: 'zh-CN', aspectRatio: '9:16', width: 1080, height: 1920 },
   Bumper6: { locale: 'zh-CN', aspectRatio: '1:1', width: 1080, height: 1080 },
   MotionPoster: { locale: 'zh-CN', aspectRatio: '9:16', width: 1080, height: 1920 },
+  PipelineSmoke: { locale: 'zh-CN', aspectRatio: '16:9', width: 1920, height: 1080 },
 };
 
 export function createFixtureManifest(compositionId: CompositionId): RenderManifest {
   const format = formats[compositionId];
+  const pack = localePack(format.locale);
+  const allShots: RenderManifest['shots'] = Array.from({ length: 10 }, (_, index) => ({
+    shotId: `shot_demo_${String(index + 1).padStart(3, '0')}`,
+    videoUri: `mock://onecrew/video/shot-${index + 1}.mp4`,
+    inFrame: index * 180,
+    outFrame: (index + 1) * 180,
+    sourceStartFrame: 0,
+    sourceEndFrame: 180,
+    crop: { x: 0.5, y: 0.5, scale: index % 2 === 0 ? 1.04 : 1.1 },
+  }));
+  const smoke = compositionId === 'PipelineSmoke';
   return {
     renderId: `render_demo_${compositionId}`,
     projectId: 'prj_shanhai_demo',
@@ -179,14 +191,8 @@ export function createFixtureManifest(compositionId: CompositionId): RenderManif
     aspectRatio: format.aspectRatio,
     fps: 30,
     designPack: fixtureDesignManifest,
-    localePack: localePack(format.locale),
-    shots: Array.from({ length: 10 }, (_, index) => ({
-      shotId: `shot_demo_${String(index + 1).padStart(3, '0')}`,
-      videoUri: `mock://onecrew/video/shot-${index + 1}.mp4`,
-      inFrame: index * 180,
-      outFrame: (index + 1) * 180,
-      crop: { x: 0.5, y: 0.5, scale: index % 2 === 0 ? 1.04 : 1.1 },
-    })),
+    localePack: smoke ? { ...pack, lines: pack.lines.slice(0, 1) } : pack,
+    shots: smoke ? allShots.slice(0, 1) : allShots,
     output: { codec: 'h264', width: format.width, height: format.height },
   };
 }

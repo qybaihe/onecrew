@@ -10,11 +10,13 @@ import { runControlledProcess, TechnicalQcEngine } from '../src/index.js';
 let directory = '';
 let healthyPath = '';
 let injectedFailurePath = '';
+let repeatedPath = '';
 
 beforeAll(async () => {
   directory = await mkdtemp(path.join(os.tmpdir(), 'onecrew-qc-test-'));
   healthyPath = path.join(directory, 'healthy.mp4');
   injectedFailurePath = path.join(directory, 'black-freeze-silence.mp4');
+  repeatedPath = path.join(directory, 'repeated.mp4');
   await runControlledProcess('ffmpeg', [
     '-hide_banner', '-loglevel', 'error', '-y',
     '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30',
@@ -30,6 +32,11 @@ beforeAll(async () => {
     '-t', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709',
     '-c:a', 'aac', '-shortest', injectedFailurePath,
+  ]);
+  await runControlledProcess('ffmpeg', [
+    '-hide_banner', '-loglevel', 'error', '-y',
+    '-stream_loop', '2', '-i', healthyPath,
+    '-t', '6', '-c', 'copy', repeatedPath,
   ]);
 });
 
@@ -101,5 +108,41 @@ describe('FFmpeg deterministic technical QC', () => {
     expect(report.blackSegments[0]?.durationSec).toBeGreaterThan(1.9);
     expect(report.freezeSegments[0]?.durationSec).toBeGreaterThan(1.4);
     expect(report.silenceSegments[0]?.durationSec).toBeGreaterThan(1.9);
+  });
+
+  it('can exclude a declared intentional end-card tail from freeze scoring', async () => {
+    const report = await engine.analyze({
+      filePath: injectedFailurePath,
+      mediaType: 'video',
+      expected: {
+        durationSec: 2,
+        durationToleranceSec: 0.15,
+        maxBlackDurationSec: 2.1,
+        maxFreezeDurationSec: 0.5,
+        ignoreFreezeTailSec: 2,
+        maxSilenceDurationSec: 2.1,
+        maxBrightnessJump: 255,
+      },
+    });
+    expect(report.checks).toContainEqual(expect.objectContaining({ code: 'freeze_frames', passed: true }));
+  });
+
+  it('rejects a periodically repeated clip through visual-variation sampling', async () => {
+    const report = await engine.analyze({
+      filePath: repeatedPath,
+      mediaType: 'video',
+      expected: {
+        durationSec: 6,
+        durationToleranceSec: 0.2,
+        maxBlackDurationSec: 6,
+        maxFreezeDurationSec: 6,
+        maxSilenceDurationSec: 6,
+        maxBrightnessJump: 255,
+        minVisualVariationRatio: 0.9,
+      },
+    });
+    expect(report.sampledFrameCount).toBeGreaterThanOrEqual(5);
+    expect(report.visualVariationRatio).toBeLessThan(0.9);
+    expect(report.checks).toContainEqual(expect.objectContaining({ code: 'visual_variation', passed: false }));
   });
 });

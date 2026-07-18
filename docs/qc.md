@@ -8,10 +8,13 @@ OneCrew 的完整 QC 是两层持久化流程，不是一次模型请求：确�
 
 - 完整解码、视频/音频流存在性、分辨率、帧率、时长、码率、codec、pixel format、色彩空间。
 - `blackdetect` 黑屏、`freezedetect` 冻结、`signalstats` 抽样亮度突变。
+- 每秒对画面中心区域降采样并计算 `visualVariationRatio`，可识别周期性复制的相同视频段；同时用 scene filter 统计 `sceneChanges`。
 - `silencedetect` 静音、`ebur128` 集成响度与 true peak。
 - 字幕 cue 的起止顺序和媒体时长边界；安全区、品牌、字幕视觉和口型由语义层打分。
 
 实现依据为 FFmpeg 官方 [Filters Documentation](https://ffmpeg.org/ffmpeg-filters.html) 和 [ffprobe Documentation](https://ffmpeg.org/ffprobe.html)。报告保留每项 `code/passed/severity/reason/actual/expected`，失败原因会给出实测值和阈值。
+
+正片还有一层渲染前静态门禁，在 `POST /v1/renders` 入队前检查时间轴连续性、独立视频数量、重复素材占比、单素材时长占比、对白密度、对白镜头覆盖和最长无对白空档。未达标的 Manifest 直接返回 HTTP 400 与可操作的 Zod 路径/原因，不会浪费渲染算力。
 
 ## 语义层
 
@@ -72,4 +75,4 @@ pnpm --filter @onecrew/workflows test:integration
 pnpm --filter @onecrew/api test:unit
 ```
 
-真实失败媒体、API/Worker 进程级恢复证据见 [Stage 6 验证记录](./verification/stage-6.md)。真实飞书租户和真实 VLM 因当前没有凭证，保持 `config-ready/unverified`，不会用 Mock 结果冒充。
+真实失败媒体、API/Worker 进程级恢复证据见 [Stage 6 验证记录](./verification/stage-6.md)；多镜头正片门禁、旧循环视频拒绝与 60 秒整集验链见 [Episode quality-gate verification](./verification/episode-quality-gates-2026-07-17.md)。真实 VLM 最小图片理解已于 2026-07-16 通过；真实飞书 Base 六表已于 2026-07-18 校验，卡片投递和四动作实租户闭环仍待验证。

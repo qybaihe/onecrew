@@ -31,6 +31,31 @@ export function defaultRemotionEntryPoint(): string {
     : path.resolve(directory, '../entry.tsx');
 }
 
+export async function resolveManifestMediaUris(
+  manifest: RenderManifest,
+  resolver: (uri: string) => Promise<string>,
+): Promise<RenderManifest> {
+  return validateRenderManifest({
+    ...manifest,
+    ...(manifest.musicUri ? { musicUri: await resolver(manifest.musicUri) } : {}),
+    shots: await Promise.all(
+      manifest.shots.map(async (shot) => ({
+        ...shot,
+        videoUri: await resolver(shot.videoUri),
+      })),
+    ),
+    localePack: {
+      ...manifest.localePack,
+      lines: await Promise.all(
+        manifest.localePack.lines.map(async (line) => ({
+          ...line,
+          ...(line.audioUri ? { audioUri: await resolver(line.audioUri) } : {}),
+        })),
+      ),
+    },
+  });
+}
+
 export class ServerRemotionEngine implements RemotionRenderEngine {
   private bundlePromise: Promise<string> | undefined;
   private readonly entryPoint: string;
@@ -65,23 +90,7 @@ export class ServerRemotionEngine implements RemotionRenderEngine {
   ): Promise<RenderedMedia> {
     const sourceManifest = validateRenderManifest(manifestInput);
     const manifest = this.options.mediaUriResolver
-      ? validateRenderManifest({
-          ...sourceManifest,
-          ...(sourceManifest.musicUri
-            ? { musicUri: await this.options.mediaUriResolver(sourceManifest.musicUri) }
-            : {}),
-          localePack: {
-            ...sourceManifest.localePack,
-            lines: await Promise.all(
-              sourceManifest.localePack.lines.map(async (line) => ({
-                ...line,
-                ...(line.audioUri
-                  ? { audioUri: await this.options.mediaUriResolver!(line.audioUri) }
-                  : {}),
-              })),
-            ),
-          },
-        })
+      ? await resolveManifestMediaUris(sourceManifest, this.options.mediaUriResolver)
       : sourceManifest;
     const renderMode = renderModeSchema.parse(modeInput);
     const design = await resolveDesignPack(this.designPacksRoot, manifest.designPack);

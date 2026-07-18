@@ -88,10 +88,13 @@ POST https://<public-host>/v1/feishu/card-actions
 
 ## 真实租户检查
 
-当前仓库没有可用飞书凭证，因此只完成了代码、fixture、签名/加密测试、Base dry-run 和本地数据库集成测试。真实租户尚未验证。拿到授权凭证后：
+2026-07-18 已使用本机 Secret 配置运行 `pnpm feishu:setup`，报告为 `mode: real`。真实租户中的 `项目 / 分镜 / 资产 / 生成任务 / 质检 / 出海实验` 六表及全部字段均校验通过，未创建或修改字段；验证记录不包含 App ID、Secret、Base token 或表 ID。
 
-1. 先运行 `pnpm feishu:setup`，检查报告中的 `mode: real`。
-2. 在飞书后台配置 URL，观察 challenge 通过。
-3. 用测试项目发送一张审批卡，分别演示四动作。
-4. 查询 `audit_logs` 和 `human_gates`，确认操作者、版本、事件 ID 和结果已持久化。
-5. 不输出或截图包含 App Secret、Encrypt Key、Verification Token 的页面。
+这证明应用取 token、Base 访问权限、表发现和字段契约可用。以下实租户闭环仍需执行：
+
+1. 在飞书后台配置 URL，观察事件与卡片回调 challenge 通过。
+2. 用测试项目投递一张 Card 2.0 审批卡，分别演示四动作。
+3. 查询 `audit_logs` 和 `human_gates`，确认操作者、版本、事件 ID 和结果已持久化。
+4. 不输出或截图包含 App Secret、Encrypt Key、Verification Token 的页面。
+
+脱敏验证结果见 [2026-07-18 飞书 Base 验证记录](./verification/feishu-base-2026-07-18.md)。

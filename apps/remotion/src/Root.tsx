@@ -7,6 +7,7 @@ import {
   EpisodeLocalized,
   EpisodeMaster,
   MotionPoster,
+  PipelineSmoke,
   Teaser15Vertical,
   Trailer30,
 } from './compositions.js';
@@ -24,6 +25,7 @@ const compositions: ReadonlyArray<{
   { id: 'Teaser15Vertical', component: Teaser15Vertical },
   { id: 'Bumper6', component: Bumper6 },
   { id: 'MotionPoster', component: MotionPoster },
+  { id: 'PipelineSmoke', component: PipelineSmoke },
 ];
 
 function metadataFor(id: CompositionId): CalculateMetadataFunction<RemotionInputProps> {

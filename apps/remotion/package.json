@@ -29,6 +29,8 @@
     "render:demo": "tsx scripts/render-demo.ts",
     "render:final-smoke": "tsx scripts/render-final-smoke.ts",
     "render:stage7-smoke": "tsx scripts/stage7-process-smoke.ts",
+    "render:pipeline-smoke": "tsx scripts/pipeline-smoke.ts",
+    "render:real-project-e2e": "tsx scripts/real-project-process-e2e.ts",
     "render:stage8-e2e": "ONECREW_RENDER_MODE=final ONECREW_SMOKE_VERSION=stage8_mock_e2e_v5 tsx scripts/stage7-process-smoke.ts ../../outputs/stage8-mock-e2e"
   },
   "dependencies": {

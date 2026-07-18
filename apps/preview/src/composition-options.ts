@@ -15,6 +15,7 @@ export const compositionOptions: readonly CompositionOption[] = [
   { id: 'Teaser15Vertical', eyebrow: '竖版预热', label: 'Teaser', duration: '15s', format: '9:16' },
   { id: 'Bumper6', eyebrow: '投放广告', label: 'Bumper', duration: '6s', format: '1:1' },
   { id: 'MotionPoster', eyebrow: '动态海报', label: 'Poster', duration: '6s', format: '9:16' },
+  { id: 'PipelineSmoke', eyebrow: '技术验链', label: 'Smoke', duration: '1–15s', format: '16:9' },
 ] as const;
 
 export function optionFor(id: CompositionId): CompositionOption {

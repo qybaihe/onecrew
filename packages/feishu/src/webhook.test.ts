@@ -77,6 +77,30 @@ describe('Feishu webhook security', () => {
       ),
     ).toMatchObject({ challenge: 'encrypted_challenge' });
   });
+
+  it('accepts the encrypted URL verification envelope without signature headers', () => {
+    const plaintext = JSON.stringify({
+      challenge: 'unsigned_encrypted_challenge',
+      token: verificationToken,
+    });
+    const rawBody = JSON.stringify({ encrypt: encryptPayload(plaintext, encryptKey) });
+
+    expect(
+      parseFeishuWebhook(rawBody, {}, { encryptKey, verificationToken, nowMs }),
+    ).toMatchObject({ challenge: 'unsigned_encrypted_challenge' });
+  });
+
+  it('still rejects unsigned encrypted non-verification callbacks', () => {
+    const plaintext = JSON.stringify({
+      header: { token: verificationToken },
+      event: { action: { value: { action: 'approve' } } },
+    });
+    const rawBody = JSON.stringify({ encrypt: encryptPayload(plaintext, encryptKey) });
+
+    expect(() =>
+      parseFeishuWebhook(rawBody, {}, { encryptKey, verificationToken, nowMs }),
+    ).toThrow(/signature headers/);
+  });
 });
 
 describe('card callback normalization', () => {

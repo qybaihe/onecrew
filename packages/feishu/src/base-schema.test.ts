@@ -31,10 +31,22 @@ describe('locked Feishu control plane schema', () => {
       expectedVersion: 3,
     });
     const body = card.body as {
-      elements: Array<{ actions?: Array<{ value: { action: string } }> }>;
+      elements: Array<{
+        columns?: Array<{
+          elements?: Array<{
+            behaviors?: Array<{ type: string; value: { action: string } }>;
+          }>;
+        }>;
+      }>;
     };
     const actions = body.elements.flatMap((element) =>
-      (element.actions ?? []).map((button) => button.value.action),
+      (element.columns ?? []).flatMap((column) =>
+        (column.elements ?? []).flatMap((button) =>
+          (button.behaviors ?? [])
+            .filter((behavior) => behavior.type === 'callback')
+            .map((behavior) => behavior.value.action),
+        ),
+      ),
     );
     expect(actions).toEqual(['approve', 'regenerate', 'switch_provider', 'manual']);
   });

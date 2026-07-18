@@ -46,6 +46,6 @@ QC 故障、一次自动重生成、第二次失败升级、切换模型和转�
 
 ## 诚实边界
 
-- 已实测：本机 PostgreSQL/Redis/MinIO、API、Worker、队列、Remotion、FFmpeg、ZIP、浏览器 Preview 与所有 Mock Adapter。
-- 仅 Mock：LLM、图片、视频、TTS、VLM 的外部能力结果；Mock TTS 会生成真实 WAV 以验证媒体链路。
-- 未实测：真实 OpenAI/火山/ElevenLabs 调用、真实飞书 Base/卡片、真实平台发布；原因是当前没有用户提供的有效凭证或授权。
+- 已实测：本机 PostgreSQL/Redis/MinIO、API、Worker、队列、Remotion、FFmpeg、ZIP、浏览器 Preview 与所有 Mock Adapter；OpenCode Go、Agnes、MiMo 五项真实最小调用；真实飞书 Base 六表字段校验。
+- 完整 Mock E2E 中的 LLM、图片、视频、TTS、VLM 结果仍来自 Mock；Mock TTS 会生成真实 WAV 以验证媒体链路。
+- 待验证：全量真实 Provider 生产 E2E、真实飞书回调/卡片四动作闭环、真实平台发布。

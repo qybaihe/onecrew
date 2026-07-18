@@ -211,8 +211,24 @@ describe('durable QC orchestration with bounded recovery', () => {
     expect(waiting.value.reason).toContain('Automatic quality retry limit reached');
     expect(waiting.value.reason).toContain('Black frames last 2.000s');
     const actions = (
-      waiting.value.reviewCard?.body as { elements?: Array<{ actions?: Array<{ value?: { action?: string } }> }> }
-    ).elements?.flatMap((element) => element.actions ?? []).map((button) => button.value?.action);
+      waiting.value.reviewCard?.body as {
+        elements?: Array<{
+          columns?: Array<{
+            elements?: Array<{
+              behaviors?: Array<{ type?: string; value?: { action?: string } }>;
+            }>;
+          }>;
+        }>;
+      }
+    ).elements?.flatMap((element) =>
+      (element.columns ?? []).flatMap((column) =>
+        (column.elements ?? []).flatMap((button) =>
+          (button.behaviors ?? [])
+            .filter((behavior) => behavior.type === 'callback')
+            .map((behavior) => behavior.value?.action),
+        ),
+      ),
+    );
     expect(actions).toEqual(['approve', 'regenerate', 'switch_provider', 'manual']);
 
     const gate = await repositories.humanGates.get(waiting.value.gateId!);

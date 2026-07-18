@@ -39,6 +39,16 @@ export class BullRenderQueue implements RenderJobQueue {
 
   async enqueue(renderId: string): Promise<{ queueJobId: string }> {
     if (renderId.includes(':')) throw new Error('BullMQ custom job IDs must not contain colons');
+    const existing = await this.queue.getJob(renderId);
+    if (existing?.id) {
+      if ((await existing.getState()) === 'failed') {
+        await existing.retry('failed', {
+          resetAttemptsMade: true,
+          resetAttemptsStarted: true,
+        });
+      }
+      return { queueJobId: existing.id };
+    }
     const options: JobsOptions = { jobId: renderId };
     const job = await this.queue.add('remotion-render', { renderId }, options);
     if (!job.id) throw new Error('BullMQ did not return a render Job ID');

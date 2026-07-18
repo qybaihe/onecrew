@@ -75,5 +75,16 @@ function renderError(reply: FastifyReply, error: unknown) {
   else if (error instanceof IdempotencyConflictError) reply.code(409);
   else if (error instanceof ZodError || error instanceof MissingRenderIdempotencyKeyError) reply.code(400);
   else reply.code(500);
-  return { ok: false, error: error instanceof Error ? error.name : 'UnknownError' };
+  return {
+    ok: false,
+    error: error instanceof Error ? error.name : 'UnknownError',
+    ...(error instanceof ZodError
+      ? {
+          details: error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
+        }
+      : {}),
+  };
 }

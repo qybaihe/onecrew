@@ -724,7 +724,7 @@ describe('PostgreSQL repositories', () => {
     const manifest = {
       renderId,
       projectId,
-      compositionId: 'EpisodeMaster' as const,
+      compositionId: 'PipelineSmoke' as const,
       locale: 'zh-CN' as const,
       aspectRatio: '16:9' as const,
       fps: 30 as const,

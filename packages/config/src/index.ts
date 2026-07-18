@@ -35,6 +35,9 @@ export const appEnvSchema = z
   S3_ACCESS_KEY: z.string().min(1).default('onecrew'),
   S3_SECRET_KEY: z.string().min(1).default('onecrew-local-minio-secret'),
   PROVIDER_MODE: z.enum(['mock', 'real']).default('mock'),
+  PROVIDER_PROFILE: z
+    .enum(['opencode-agnes-mimo', 'openai-volcengine-elevenlabs'])
+    .default('opencode-agnes-mimo'),
   PROVIDER_QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
   PROVIDER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
   PROVIDER_SOFT_BUDGET_RATIO: z.coerce.number().positive().max(1).default(0.8),
@@ -51,6 +54,26 @@ export const appEnvSchema = z
   FFPROBE_PATH: z.string().min(1).default('ffprobe'),
   REMOTION_BROWSER_EXECUTABLE: optionalEnvString,
   REMOTION_FINAL_MAX_DIMENSION: optionalPositiveInteger,
+  OPENCODE_GO_API_KEY: optionalEnvString,
+  OPENCODE_GO_BASE_URL: z.url().default('https://opencode.ai/zen/go/v1'),
+  OPENCODE_GO_LLM_MODEL: z.string().min(1).default('glm-5.2'),
+  OPENCODE_GO_VLM_MODEL: z.string().min(1).default('minimax-m3'),
+  OPENCODE_GO_LLM_INPUT_CNY_PER_MILLION_TOKENS: z.coerce.number().nonnegative().default(0),
+  OPENCODE_GO_LLM_OUTPUT_CNY_PER_MILLION_TOKENS: z.coerce.number().nonnegative().default(0),
+  OPENCODE_GO_VLM_INPUT_CNY_PER_MILLION_TOKENS: z.coerce.number().nonnegative().default(0),
+  OPENCODE_GO_VLM_OUTPUT_CNY_PER_MILLION_TOKENS: z.coerce.number().nonnegative().default(0),
+  AGNES_API_KEY: optionalEnvString,
+  AGNES_BASE_URL: z.url().default('https://apihub.agnes-ai.com'),
+  AGNES_IMAGE_MODEL: z.string().min(1).default('agnes-image-2.1-flash'),
+  AGNES_IMAGE_COST_CNY_PER_IMAGE: z.coerce.number().nonnegative().default(0),
+  AGNES_VIDEO_MODEL: z.string().min(1).default('agnes-video-v2.0'),
+  AGNES_VIDEO_COST_CNY_PER_SECOND: z.coerce.number().nonnegative().default(0),
+  MIMO_API_KEY: optionalEnvString,
+  MIMO_BASE_URL: z.url().default('https://api.xiaomimimo.com/v1'),
+  MIMO_TTS_MODEL: z.string().min(1).default('mimo-v2.5-tts'),
+  MIMO_TTS_ZH_VOICES: z.string().min(1).default('冰糖,茉莉,苏打,白桦'),
+  MIMO_TTS_EN_VOICES: z.string().min(1).default('Mia,Chloe,Milo,Dean'),
+  MIMO_TTS_COST_CNY_PER_THOUSAND_CHARACTERS: z.coerce.number().nonnegative().default(0),
   OPENAI_API_KEY: optionalEnvString,
   OPENAI_BASE_URL: z.url().default('https://api.openai.com/v1'),
   OPENAI_MODEL: optionalEnvString,
@@ -80,20 +103,24 @@ export const appEnvSchema = z
   })
   .superRefine((env, context) => {
     if (env.PROVIDER_MODE !== 'real') return;
-    const requiredStrings = [
-      'PROVIDER_CALLBACK_SECRET',
-      'OPENAI_API_KEY',
-      'OPENAI_MODEL',
-      'OPENAI_VLM_MODEL',
-      'VOLCENGINE_ARK_API_KEY',
-      'SEEDREAM_MODEL',
-      'SEEDANCE_MODEL',
-      'ELEVENLABS_API_KEY',
-      'ELEVENLABS_MODEL',
-    ] as const;
+    const requiredStrings =
+      env.PROVIDER_PROFILE === 'opencode-agnes-mimo'
+        ? (['PROVIDER_CALLBACK_SECRET', 'OPENCODE_GO_API_KEY', 'AGNES_API_KEY', 'MIMO_API_KEY'] as const)
+        : ([
+            'PROVIDER_CALLBACK_SECRET',
+            'OPENAI_API_KEY',
+            'OPENAI_MODEL',
+            'OPENAI_VLM_MODEL',
+            'VOLCENGINE_ARK_API_KEY',
+            'SEEDREAM_MODEL',
+            'SEEDANCE_MODEL',
+            'ELEVENLABS_API_KEY',
+            'ELEVENLABS_MODEL',
+          ] as const);
     for (const key of requiredStrings) {
       if (!env[key]) context.addIssue({ code: 'custom', path: [key], message: 'required in real provider mode' });
     }
+    if (env.PROVIDER_PROFILE !== 'openai-volcengine-elevenlabs') return;
     const requiredCosts = [
       'OPENAI_INPUT_CNY_PER_MILLION_TOKENS',
       'OPENAI_OUTPUT_CNY_PER_MILLION_TOKENS',

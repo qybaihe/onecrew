@@ -12,7 +12,7 @@ OneCrew 是一个由飞书控制、API 驱动的中英双语 AI 短剧生产与�
 
 正式视频统一由 Remotion 渲染。项目业务状态保存在 PostgreSQL，媒体保存在 S3/MinIO，Redis/BullMQ 负责异步任务；飞书是唯一审批控制面，本地创作台负责工程浏览、素材组织、分镜画布、工程导入和成片审阅。
 
-> 当前版本：`0.1.0`。阶段 0～8 已完成本地实现和 Mock 端到端验证。真实模型、真实飞书租户和平台直发需要使用者自己的凭证与授权，仓库不会把 Mock 结果描述成真实厂商结果。
+> 当前版本：`0.1.0`。阶段 0～8 已完成本地实现和 Mock 端到端验证。2026-07-16 已用操作者提供的凭证通过 LLM、VLM、图片、视频和 TTS 五项最小真实烟雾测试；2026-07-18 已通过真实飞书租户校验 Base 六表及全部字段。真实完整生产 E2E、飞书回调/卡片实租户闭环和平台直发仍待验证，仓库不会提交凭证或把 Mock 结果描述成真实厂商结果。
 
 ## 主要功能
 
@@ -30,15 +30,15 @@ OneCrew 是一个由飞书控制、API 驱动的中英双语 AI 短剧生产与�
 | 工程导入导出 | 导入结构化 JSON 或含媒体的 ZIP；导出带 SHA-256 完整性校验的 OneCrew 工程包 | 已实现并测试 |
 | 并发编辑 | 剧集/素材设定/分镜乐观版本、409 冲突防护、成功编辑审计 | 已实现并测试 |
 | 设计系统 | 解析 Open Design / `DESIGN.md`，编译不可变 Design Pack | 已实现 |
-| Provider Gateway | LLM、VLM、图片、视频、TTS 的 Primary/Fallback 路由 | Mock 已实测；Real Adapter 已实现 |
+| Provider Gateway | LLM、VLM、图片、视频、TTS 的 Primary/Fallback 路由 | Mock 已实测；当前五项 Real Adapter 烟雾测试通过 |
 | 任务系统 | BullMQ 队列、幂等键、预算闸门、重试、取消、回调签名 | 已实现并测试 |
 | 资产管理 | 来源、Provider、模型、种子、哈希、许可证和父子版本链 | 已实现并测试 |
-| 正片渲染 | 中英文正片、30 秒预告、15 秒竖版、6 秒广告、动态海报 | 已实测 |
-| 自动质检 | FFmpeg/ffprobe 技术检查、VLM 语义检查、一次自动修复 | 已实现并测试 |
+| 正片渲染 | 中英文正片、30 秒预告、15 秒竖版、6 秒广告、动态海报；源素材裁切与成片时间轴独立 | 已实测 |
+| 自动质检 | 入队前拦截重复素材、稀疏对白与空时间轴；FFmpeg 检测画面变化率/转场，VLM 语义复核 | 已实现并测试 |
 | 人工恢复 | 飞书 `通过 / 重生成 / 切换模型 / 转人工` 四动作 | Mock/集成测试通过 |
 | 本地化 | 英文结构化翻译、逐句 TTS、时长驱动时间线和字幕 | 已实现并测试 |
 | 发布 | 双语媒体清单、Locale Pack、实验种子、许可证和 ZIP | 已实现并测试 |
-| 实验回写 | PostgreSQL 实验台账；有凭证时可写入飞书 Base | 本地已实测；真实飞书待授权 |
+| 实验回写 | PostgreSQL 实验台账；有凭证时可写入飞书 Base | 本地已实测；真实 Base 结构已验证，发布链回写待验证 |
 
 ## 系统如何工作
 
@@ -133,7 +133,7 @@ pnpm infra:down
 8. 在“全局素材库”按角色/场景/道具名、工程名或用途搜索其他工程的受控素材。点击“复用”会在当前工程生成确定性别名，保留原资产 URI、内容哈希、许可证和 `parentAssetId`，导出工程时不依赖原项目的编辑状态；
 9. 保存时界面会携带当前版本。如果其他编辑者已先保存，过期修改会收到 HTTP 409，界面随即重新读取最新内容，不会静默覆盖；
 10. 分镜保存后点击“生成分镜图”或“生成视频”。创作台会跟踪异步 Job，图片会保留实体参考、上一镜尾帧和连续性备注，并在提示词中使用 `@图片1` 至 `@图片10` 与 Provider 的图片数组一一对齐；视频优先使用该镜头最新的图片版本。成功结果自动写入素材库并用 `parentAssetId` 连接前一版；
-11. 界面会显示 `MOCK` 或真实 Provider。Mock 用于本地开发，不产生真实媒体；真实生成需先配置 Provider 凭证和正价格。超出项目预算时 Job 进入人工闸门，不会绕过预算继续扣费；
+11. 界面会显示 `MOCK` 或真实 Provider。Mock 用于本地开发，不产生真实媒体；真实生成需先配置 Provider 凭证和当前价格参数（订阅额度或免费接口可设为 `0`）。超出项目预算时 Job 进入人工闸门，不会绕过预算继续扣费；
 12. 勾选分镜卡片左侧的选择框，在“镜头工作流组”填写名称并保存。镜头组持久化在 PostgreSQL，刷新页面或重新启动后仍可恢复；“补齐缺失项”跳过已有资产，“整组生成新版本”则强制创建新批次，二者都复用原有 Provider、预算闸门、BullMQ Job 和资产版本链；
 13. 使用“批量补齐分镜图/视频”只处理尚无对应资产的全部镜头。批次记录保存在 PostgreSQL，刷新页面仍能恢复最新进度；可停止未完成 Job，也可只重试失败或已取消项；
 14. 对已写入受控 MinIO/S3 的图片或视频点击“运行连续性 QC”。系统会从当前保存版本自动生成角色身份、服装、场景、道具、光照、镜头轴线、上一镜尾帧与视频稳定性检查项，再交给现有技术 QC、VLM 与飞书人工闸门；Mock 占位 URI 不会被冒充为可检查媒体；
@@ -256,20 +256,33 @@ pnpm demo:mock-e2e
 PROVIDER_MODE=mock
 ```
 
-Mock 是默认值，适合开发、CI 和演示。切换到 `real` 前必须配置对应 API Key、模型 ID、回调密钥和正价格；缺项会失败关闭，不会静默退回 Mock。
+Mock 是默认值，适合开发、CI 和演示。切换到 `real` 前必须配置对应 API Key、模型 ID、回调密钥和当前价格；缺项会失败关闭，不会静默退回 Mock。
+
+当前真实 Provider Profile：
+
+```dotenv
+PROVIDER_MODE=real
+PROVIDER_PROFILE=opencode-agnes-mimo
+```
 
 真实能力对应变量：
 
-- LLM/VLM：`OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_VLM_MODEL`
-- 图片/视频：`VOLCENGINE_ARK_API_KEY`、`SEEDREAM_MODEL`、`SEEDANCE_MODEL`
-- TTS：`ELEVENLABS_API_KEY`、`ELEVENLABS_MODEL`
+- LLM：`OPENCODE_GO_API_KEY`、`OPENCODE_GO_LLM_MODEL=glm-5.2`
+- VLM：同一 Key，`OPENCODE_GO_VLM_MODEL=minimax-m3`
+- 图片/视频：`AGNES_API_KEY`、`AGNES_IMAGE_MODEL=agnes-image-2.1-flash`、`AGNES_VIDEO_MODEL=agnes-video-v2.0`
+- TTS：`MIMO_API_KEY`、`MIMO_TTS_MODEL=mimo-v2.5-tts` 和中英文音色列表
 - 安全回调：`PROVIDER_CALLBACK_SECRET`
+
+OpenCode Go 订阅额度、Agnes 当前免费价格和 MiMo 限时免费期间可把对应边际成本设为 `0`；一旦启用 Zen 余额回退或厂商恢复计费，必须先更新人民币单价。旧的 OpenAI + Volcengine + ElevenLabs Profile 仍保留为可选兼容路径。
 
 配置完成后运行：
 
 ```bash
 pnpm providers:check
+pnpm providers:smoke-real
 ```
+
+`providers:check` 只检查环境和路由，不发起外部任务；`providers:smoke-real` 会实际提交五个最小请求，可能消耗订阅额度或产生费用。
 
 详细说明见 [docs/provider-setup.md](./docs/provider-setup.md)。
 
@@ -303,6 +316,8 @@ pnpm feishu:setup
 | `pnpm remotion:studio` | 打开 Remotion Studio |
 | `pnpm remotion:demo` | 渲染固定示例 Composition |
 | `pnpm remotion:final-smoke` | 运行 Final 渲染烟雾测试 |
+| `pnpm remotion:pipeline-smoke -- <projectId> <shotId>` | 使用单个真实镜头运行 1～15 秒独立技术验链，不会伪装成正片 |
+| `pnpm remotion:real-project-e2e -- <projectId> <episodeId>` | 仅在完整剧集的多镜头素材、对白与 QC 全部达标时生成双语正片和发布包 |
 | `pnpm demo:mock-e2e` | 运行完整 Mock 生产闭环 |
 | `pnpm contracts:generate` | 重新生成 JSON Schema |
 | `pnpm db:generate` | 生成 Drizzle migration |
@@ -310,11 +325,13 @@ pnpm feishu:setup
 | `pnpm db:migrate` | 应用数据库 migration |
 | `pnpm db:seed` | 写入可重复运行的演示数据 |
 | `pnpm design:compile` | 编译示例 Design Pack |
+| `pnpm providers:check` | 脱敏检查 Provider Profile、凭证完整性和路由 |
+| `pnpm providers:smoke-real` | 提交五项最小真实 Provider 烟雾测试 |
 | `pnpm lint` | ESLint 检查 |
 | `pnpm typecheck` | TypeScript 全仓检查 |
 | `pnpm test:unit` | 运行单元测试 |
 | `pnpm test:integration` | 运行依赖 PostgreSQL/Redis/MinIO 的集成测试 |
-| `pnpm build` | 构建全部 17 个 package/app |
+| `pnpm build` | 构建全部 18 个 package/app |
 | `pnpm readme:check` | 检查中英文 README 是否同步且关键命令存在 |
 
 推荐提交前运行：
@@ -369,11 +386,12 @@ docs/                   API、运维、配置、验证与设计文档
 
 ## 测试与当前完成度
 
-最近一次完整本地回归（2026-07-15）：
+最近一次仓库级回归（2026-07-18）：
 
-- 17 个 workspace 的 lint、typecheck 和 build 全部通过；
-- 92 个单元测试通过；
-- 37 个集成测试通过；
+- 18 个 workspace 的 lint 和 build 全部通过，32 个 typecheck 任务通过；
+- 106 个单元测试通过；
+- 43 个集成测试通过；
+- PostgreSQL、Redis、MinIO 均为 healthy；真实飞书 Base 的 `项目 / 分镜 / 资产 / 生成任务 / 质检 / 出海实验` 六表及全部字段校验通过，未创建或修改字段；
 - 空数据库成功应用 10 个 migration，得到 23 张业务表和 10 个演示镜头；
 - JSON 与 ZIP 工程导入已通过 API 烟雾测试，ZIP 媒体真实写入本地 MinIO 并绑定版本化资产；OneCrew 工程导出已通过带 3 个真实 MinIO 素材的下载与 ZIP 完整性检查；
 - 故事规划已用本地 Mock Worker 实跑：结构化返回 2 集剧情与角色/场景/道具设定，预览后一次事务追加，项目从 v1 升到 v2，相同 Job 可幂等回放，过期版本返回 409；
@@ -436,7 +454,7 @@ REMOTION_FINAL_MAX_DIMENSION=640 pnpm start:worker
 - API 日志会脱敏 Authorization、API Key、token、secret、password 和 cookie。
 - Provider 回调使用带时间戳的 HMAC-SHA256，并拒绝重放与篡改正文。
 - `PROVIDER_MODE=real` 对缺失配置失败关闭。
-- 当前未使用真实凭证验证 OpenAI、火山引擎、ElevenLabs 或真实飞书租户。
+- 2026-07-16 已真实验证 OpenCode Go `glm-5.2`、`minimax-m3`、Agnes Image 2.1 Flash、Agnes Video V2.0 和 MiMo V2.5 TTS；2026-07-18 已验证真实飞书 Base 六表，回调 challenge、卡片投递和四动作实租户闭环仍待验证。
 - 当前经审计的发布方式是 ZIP 导出；平台直发尚未声明为可用。
 - Mock 媒体会显示明确的 `MOCK · shot_id` 标记。
 

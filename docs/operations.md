@@ -39,7 +39,7 @@ BullMQ 可恢复排队任务；领域状态、幂等记录、人工闸门和 Lan
 - API 503：先运行 `pnpm infra:status`，再看 `pnpm infra:logs`，恢复依赖后重试 `/readyz`。
 - Job 长时间排队：确认独立 Worker 已输出 `onecrew_worker_ready`；不要在 API 进程内执行媒体任务。
 - 相同幂等键 409：原请求与新请求不同，应使用新键或恢复原请求，不能覆盖已有记录。
-- Provider Real 启动失败：运行 `pnpm providers:check`；Real 模式对缺失凭证、模型 ID、回调密钥和正价格失败关闭。
+- Provider Real 启动失败：运行 `pnpm providers:check`；Real 模式对缺失凭证、模型 ID、回调密钥或无效价格参数失败关闭（订阅额度或免费接口允许价格为 `0`）。
 - QC 进入人工：从飞书四动作处理；无真实飞书配置时从持久化 `reviewCard`/`mock_outbox` 做集成演示。
 - Render 失败：读取持久化 `errorCode/errorMessage`，修复 Manifest 或运行时后以新 `renderId` 提交；相同语义输入会命中成功缓存。
 

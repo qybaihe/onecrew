@@ -143,6 +143,12 @@
           "minimum": 0,
           "maximum": 60
         },
+        "ignoreFreezeTailSec": {
+          "default": 0,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
         "maxSilenceDurationSec": {
           "default": 2,
           "type": "number",
@@ -169,6 +175,16 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 255
+        },
+        "minSceneChanges": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
+        "minVisualVariationRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         },
         "subtitleCues": {
           "default": [],
@@ -210,6 +226,7 @@
         "allowedPixelFormats",
         "maxBlackDurationSec",
         "maxFreezeDurationSec",
+        "ignoreFreezeTailSec",
         "maxSilenceDurationSec",
         "maxBrightnessJump",
         "subtitleCues"

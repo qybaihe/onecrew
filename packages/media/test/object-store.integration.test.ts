@@ -25,6 +25,13 @@ describe('S3MediaStore against local MinIO', () => {
     expect(written.uri).toBe(`s3://${store.bucket}/${key}`);
     expect(new TextDecoder().decode(fetched.bytes)).toBe('onecrew-media-proof');
     expect(fetched).toMatchObject({ contentType: 'text/plain', key });
+
+    const signedUrl = await store.presignGet(written.uri, 60);
+    const signedResponse = await fetch(signedUrl);
+    expect(signedResponse.ok).toBe(true);
+    expect(signedResponse.headers.get('content-type')).toContain('text/plain');
+    expect(await signedResponse.text()).toBe('onecrew-media-proof');
+
     await store.client.send(new DeleteObjectCommand({ Bucket: store.bucket, Key: key }));
   });
 });

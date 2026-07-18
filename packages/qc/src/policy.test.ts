@@ -17,6 +17,7 @@ const request: QcRunRequest = {
     allowedPixelFormats: ['yuv420p'],
     maxBlackDurationSec: 0.75,
     maxFreezeDurationSec: 1.5,
+    ignoreFreezeTailSec: 0,
     maxSilenceDurationSec: 2,
     maxBrightnessJump: 70,
     subtitleCues: [],

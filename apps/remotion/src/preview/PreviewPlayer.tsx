@@ -7,6 +7,7 @@ import {
   EpisodeLocalized,
   EpisodeMaster,
   MotionPoster,
+  PipelineSmoke,
   Teaser15Vertical,
   Trailer30,
 } from '../compositions.js';
@@ -20,6 +21,7 @@ const componentById: Record<CompositionId, ComponentType<RemotionInputProps>> = 
   Teaser15Vertical,
   Bumper6,
   MotionPoster,
+  PipelineSmoke,
 };
 
 export function PreviewPlayer({ input }: { input: RemotionInputProps }) {

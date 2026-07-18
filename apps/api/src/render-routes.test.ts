@@ -130,4 +130,43 @@ describe('Remotion Render API routes', () => {
     expect(cancel.statusCode).toBe(200);
     expect(cancel.json()).toEqual({ status: 'cancelled' });
   });
+
+  it('rejects a repeated single-asset episode before it enters the render queue', async () => {
+    const paddedEpisode = {
+      ...manifest,
+      renderId: 'render_api_repeated_episode',
+      compositionId: 'EpisodeMaster',
+      aspectRatio: '16:9',
+      output: { codec: 'h264', width: 1920, height: 1080 },
+      shots: Array.from({ length: 10 }, (_, index) => ({
+        shotId: `shot_repeated_${index + 1}`,
+        videoUri: 'https://media.test/one-source.mp4',
+        inFrame: index * 180,
+        outFrame: (index + 1) * 180,
+      })),
+      localePack: {
+        ...manifest.localePack,
+        lines: Array.from({ length: 10 }, (_, index) => ({
+          ...manifest.localePack.lines[0]!,
+          lineId: `line_repeated_${index + 1}`,
+          shotId: `shot_repeated_${index + 1}`,
+          startMs: index * 6_000 + 500,
+          endMs: index * 6_000 + 2_500,
+        })),
+      },
+    };
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/renders',
+      headers: { 'idempotency-key': 'idem_repeated_episode' },
+      payload: { manifest: paddedEpisode, mode: 'preview' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: 'ZodError',
+      details: expect.arrayContaining([
+        expect.objectContaining({ message: expect.stringMatching(/distinct video assets/) }),
+      ]),
+    });
+  });
 });

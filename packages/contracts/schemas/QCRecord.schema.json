@@ -284,6 +284,21 @@
           "type": "number",
           "minimum": 0
         },
+        "sceneChanges": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sampledFrameCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "visualVariationRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
         "checks": {
           "minItems": 1,
           "type": "array",

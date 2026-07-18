@@ -69,21 +69,28 @@ export function SafeArea({ children }: PropsWithChildren) {
   );
 }
 
-function mockPalette(uri: string): [string, string, string] {
+function mockPalette(uri: string, shotId: string): [string, string, string] {
   let value = 0;
   for (const char of uri) value = (value * 31 + char.charCodeAt(0)) >>> 0;
   const hue = value % 360;
-  return [`hsl(${hue} 52% 18%)`, `hsl(${(hue + 42) % 360} 64% 31%)`, `hsl(${(hue + 178) % 360} 70% 18%)`];
+  const numericSuffix = Number.parseInt(shotId.match(/(\d+)$/)?.[1] ?? `${value % 10}`, 10);
+  const bright = numericSuffix % 2 === 0;
+  return bright
+    ? [`hsl(${hue} 58% 38%)`, `hsl(${(hue + 42) % 360} 72% 58%)`, `hsl(${(hue + 178) % 360} 68% 25%)`]
+    : [`hsl(${hue} 58% 8%)`, `hsl(${(hue + 42) % 360} 68% 24%)`, `hsl(${(hue + 178) % 360} 72% 10%)`];
 }
 
 function SyntheticShot({ uri, shotId }: { uri: string; shotId: string }) {
   const frame = useCurrentFrame();
-  const [a, b, c] = mockPalette(uri);
-  const drift = Math.sin(frame / 28) * 4;
+  const [a, b, c] = mockPalette(uri, shotId);
+  const drift = Math.sin(frame / 18) * 14;
+  const counterDrift = Math.cos(frame / 23) * 11;
+  const pulse = 0.92 + Math.sin(frame / 15) * 0.08;
   return (
     <AbsoluteFill
       style={{
-        background: `radial-gradient(circle at ${42 + drift}% ${38 - drift / 2}%, ${b}, transparent 34%), linear-gradient(135deg, ${a}, ${c})`,
+        background: `radial-gradient(circle at ${42 + drift}% ${38 - counterDrift}%, ${b}, transparent 31%), radial-gradient(circle at ${68 - counterDrift}% ${68 + drift / 2}%, ${c}, transparent 38%), linear-gradient(135deg, ${a}, ${c})`,
+        filter: `brightness(${pulse})`,
       }}
     >
       <div
@@ -91,7 +98,7 @@ function SyntheticShot({ uri, shotId }: { uri: string; shotId: string }) {
           position: 'absolute',
           inset: '14%',
           border: '2px solid rgba(255,255,255,0.13)',
-          transform: `translateX(${drift}px) rotate(-2deg)`,
+          transform: `translate(${drift * 1.8}px, ${counterDrift}px) rotate(${drift / 9 - 2}deg) scale(${1 + Math.sin(frame / 31) * 0.025})`,
         }}
       />
       <div
@@ -132,10 +139,13 @@ export function SmartCrop({
 
 function ShotMedia({
   shot,
+  sequenceDurationInFrames,
 }: {
   shot: RemotionInputProps['manifest']['shots'][number];
+  sequenceDurationInFrames: number;
 }) {
   const parsed = new URL(shot.videoUri);
+  const sourcePlayback = calculateSourcePlayback(shot, sequenceDurationInFrames);
   return (
     <SmartCrop {...(shot.crop ? { crop: shot.crop } : {})}>
       {parsed.protocol === 'mock:' ? (
@@ -144,11 +154,24 @@ function ShotMedia({
         <OffthreadVideo
           src={shot.videoUri}
           muted
+          {...sourcePlayback}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       )}
     </SmartCrop>
   );
+}
+
+export function calculateSourcePlayback(
+  shot: RemotionInputProps['manifest']['shots'][number],
+  sequenceDurationInFrames: number,
+): { startFrom?: number; playbackRate?: number } {
+  if (shot.sourceStartFrame === undefined || shot.sourceEndFrame === undefined) return {};
+  const sourceDuration = shot.sourceEndFrame - shot.sourceStartFrame;
+  return {
+    startFrom: shot.sourceStartFrame,
+    playbackRate: sourceDuration / Math.max(1, sequenceDurationInFrames),
+  };
 }
 
 export function ShotSequence({
@@ -169,7 +192,7 @@ export function ShotSequence({
         durationInFrames={shot.outFrame - shot.inFrame}
         premountFor={30}
       >
-        <ShotMedia shot={shot} />
+        <ShotMedia shot={shot} sequenceDurationInFrames={shot.outFrame - shot.inFrame} />
       </Sequence>
     ));
   }
@@ -183,7 +206,7 @@ export function ShotSequence({
     if (!shot) return null;
     return (
       <Sequence key={`${shot.shotId}_${index}`} from={from} durationInFrames={duration} premountFor={15}>
-        <ShotMedia shot={shot} />
+        <ShotMedia shot={shot} sequenceDurationInFrames={duration} />
       </Sequence>
     );
   });

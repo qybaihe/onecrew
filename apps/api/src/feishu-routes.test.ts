@@ -34,6 +34,34 @@ describe('Feishu API routes', () => {
     await app.close();
   });
 
+  it('answers URL verification on the card callback endpoint', async () => {
+    const handle = vi.fn();
+    const app = createApp({
+      probes: passingProbes,
+      logger: false,
+      feishu: {
+        security: {
+          verificationToken: 'verification_test',
+          encryptKey: 'encrypt_test',
+        },
+        cardActionService: { handle },
+      },
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/feishu/card-actions',
+      payload: {
+        challenge: 'card_challenge_test',
+        token: 'verification_test',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ challenge: 'card_challenge_test' });
+    expect(handle).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it('rejects an invalid verification token', async () => {
     const app = createApp({
       probes: passingProbes,

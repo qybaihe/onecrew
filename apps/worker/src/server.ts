@@ -91,8 +91,7 @@ const remotionEngine = new ServerRemotionEngine({
     : {}),
   mediaUriResolver: async (uri) => {
     if (!uri.startsWith('s3://')) return uri;
-    const object = await mediaStore.get(uri);
-    return `data:${object.contentType};base64,${Buffer.from(object.bytes).toString('base64')}`;
+    return mediaStore.presignGet(uri);
   },
 });
 const renderOrchestrator = new RenderOrchestrator(

@@ -125,6 +125,18 @@ function brightnessJump(text: string): number | undefined {
   return maximum;
 }
 
+function frameHashes(text: string): string[] {
+  return text
+    .split('\n')
+    .filter((line) => /^\d+,/.test(line))
+    .map((line) => line.split(',').at(-1)?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+function sceneChangeCount(text: string): number {
+  return [...text.matchAll(/Parsed_showinfo[^\n]*\bn:\s*\d+/g)].length;
+}
+
 export class TechnicalQcEngine {
   private readonly ffmpegPath: string;
   private readonly ffprobePath: string;
@@ -224,6 +236,9 @@ export class TechnicalQcEngine {
 
     let videoAnalysis = '';
     let audioAnalysis = '';
+    let sceneChanges: number | undefined;
+    let sampledFrameCount: number | undefined;
+    let visualVariationRatio: number | undefined;
     if (input.mediaType === 'video' && video) {
       const result = await this.run(
         this.ffmpegPath,
@@ -250,6 +265,64 @@ export class TechnicalQcEngine {
         },
       );
       videoAnalysis = result.stderr;
+      if (
+        expected.minSceneChanges !== undefined ||
+        expected.minVisualVariationRatio !== undefined
+      ) {
+        const [sceneResult, sampleResult] = await Promise.all([
+          this.run(
+            this.ffmpegPath,
+            [
+              '-hide_banner',
+              '-nostats',
+              '-v',
+              'info',
+              '-i',
+              input.filePath,
+              '-map',
+              '0:v:0',
+              '-vf',
+              'select=gt(scene\\,0.18),showinfo',
+              '-an',
+              '-f',
+              'null',
+              '-',
+            ],
+            {
+              timeoutMs: this.timeoutMs,
+              allowFailure: true,
+              ...(input.signal ? { signal: input.signal } : {}),
+            },
+          ),
+          this.run(
+            this.ffmpegPath,
+            [
+              '-hide_banner',
+              '-loglevel',
+              'error',
+              '-i',
+              input.filePath,
+              '-map',
+              '0:v:0',
+              '-vf',
+              'crop=iw*0.6:ih*0.6:iw*0.2:ih*0.2,fps=1,scale=32:18:flags=area,format=gray',
+              '-an',
+              '-f',
+              'framemd5',
+              '-',
+            ],
+            {
+              timeoutMs: this.timeoutMs,
+              allowFailure: true,
+              ...(input.signal ? { signal: input.signal } : {}),
+            },
+          ),
+        ]);
+        sceneChanges = sceneChangeCount(sceneResult.stderr);
+        const hashes = frameHashes(sampleResult.stdout);
+        sampledFrameCount = hashes.length;
+        visualVariationRatio = hashes.length === 0 ? 0 : new Set(hashes).size / hashes.length;
+      }
     }
     if (input.mediaType === 'video' && audio) {
       const result = await this.run(
@@ -308,9 +381,47 @@ export class TechnicalQcEngine {
     if (expected.colorSpace !== undefined) add('color_space', probe.colorSpace === expected.colorSpace, probe.colorSpace === expected.colorSpace ? 'Color space matches expectation' : `Color space ${probe.colorSpace ?? 'unknown'} does not match required ${expected.colorSpace}`, probe.colorSpace ?? 'unknown', expected.colorSpace);
     const longestBlack = Math.max(0, ...blackSegments.map((item) => item.durationSec));
     add('black_frames', longestBlack <= expected.maxBlackDurationSec, longestBlack <= expected.maxBlackDurationSec ? 'Longest black segment is within limit' : `Black segment ${longestBlack.toFixed(3)}s exceeds ${expected.maxBlackDurationSec.toFixed(3)}s limit`, Number(longestBlack.toFixed(3)), expected.maxBlackDurationSec);
-    const longestFreeze = Math.max(0, ...freezeSegments.map((item) => item.durationSec));
-    add('freeze_frames', longestFreeze <= expected.maxFreezeDurationSec, longestFreeze <= expected.maxFreezeDurationSec ? 'Longest frozen segment is within limit' : `Frozen segment ${longestFreeze.toFixed(3)}s exceeds ${expected.maxFreezeDurationSec.toFixed(3)}s limit`, Number(longestFreeze.toFixed(3)), expected.maxFreezeDurationSec);
+    const freezeCutoffSec = Math.max(0, durationSec - expected.ignoreFreezeTailSec);
+    const scoredFreezeSegments = freezeSegments
+      .map((item) => ({ ...item, endSec: Math.min(item.endSec, freezeCutoffSec) }))
+      .filter((item) => item.endSec > item.startSec)
+      .map((item) => ({ ...item, durationSec: item.endSec - item.startSec }));
+    const longestFreeze = Math.max(0, ...scoredFreezeSegments.map((item) => item.durationSec));
+    add(
+      'freeze_frames',
+      longestFreeze <= expected.maxFreezeDurationSec,
+      longestFreeze <= expected.maxFreezeDurationSec
+        ? expected.ignoreFreezeTailSec > 0
+          ? `Longest frozen segment before the intentional ${expected.ignoreFreezeTailSec.toFixed(2)}s tail is within limit`
+          : 'Longest frozen segment is within limit'
+        : `Frozen segment ${longestFreeze.toFixed(3)}s exceeds ${expected.maxFreezeDurationSec.toFixed(3)}s limit`,
+      Number(longestFreeze.toFixed(3)),
+      expected.maxFreezeDurationSec,
+    );
     if (maxBrightnessJump !== undefined) add('brightness_jump', maxBrightnessJump <= expected.maxBrightnessJump, maxBrightnessJump <= expected.maxBrightnessJump ? 'Sampled brightness changes stay within limit' : `Brightness jump ${maxBrightnessJump.toFixed(3)} exceeds ${expected.maxBrightnessJump.toFixed(3)} limit`, Number(maxBrightnessJump.toFixed(3)), expected.maxBrightnessJump);
+    if (expected.minSceneChanges !== undefined) {
+      add(
+        'scene_changes',
+        (sceneChanges ?? 0) >= expected.minSceneChanges,
+        (sceneChanges ?? 0) >= expected.minSceneChanges
+          ? 'Scene-change count meets the narrative variation minimum'
+          : `Detected ${sceneChanges ?? 0} scene changes; at least ${expected.minSceneChanges} are required`,
+        sceneChanges ?? 0,
+        expected.minSceneChanges,
+      );
+    }
+    if (expected.minVisualVariationRatio !== undefined) {
+      const ratio = visualVariationRatio ?? 0;
+      add(
+        'visual_variation',
+        ratio >= expected.minVisualVariationRatio,
+        ratio >= expected.minVisualVariationRatio
+          ? 'Sampled center frames contain sufficient visual variation'
+          : `Visual variation ratio ${(ratio * 100).toFixed(1)}% is below ${(expected.minVisualVariationRatio * 100).toFixed(1)}%`,
+        Number(ratio.toFixed(4)),
+        expected.minVisualVariationRatio,
+      );
+    }
     add('audio_required', !expected.requireAudio || Boolean(audio), audio ? 'Audio stream is present' : expected.requireAudio ? 'Required audio stream is missing' : 'Audio is optional');
     if (audio) {
       add('audio_codec', expected.allowedAudioCodecs.includes(probe.audioCodec ?? ''), expected.allowedAudioCodecs.includes(probe.audioCodec ?? '') ? 'Audio codec is allowed' : `Audio codec ${probe.audioCodec ?? 'unknown'} is not in the allowed set`, probe.audioCodec ?? 'unknown', expected.allowedAudioCodecs.join(','));
@@ -332,6 +443,9 @@ export class TechnicalQcEngine {
       ...(integratedLufs === undefined ? {} : { integratedLufs }),
       ...(truePeakDbtp === undefined ? {} : { truePeakDbtp }),
       ...(maxBrightnessJump === undefined ? {} : { maxBrightnessJump }),
+      ...(sceneChanges === undefined ? {} : { sceneChanges }),
+      ...(sampledFrameCount === undefined ? {} : { sampledFrameCount }),
+      ...(visualVariationRatio === undefined ? {} : { visualVariationRatio }),
       checks,
       analyzedAt: new Date().toISOString(),
     });

@@ -32,7 +32,8 @@
             "Trailer30",
             "Teaser15Vertical",
             "Bumper6",
-            "MotionPoster"
+            "MotionPoster",
+            "PipelineSmoke"
           ]
         },
         "locale": {
@@ -335,6 +336,16 @@
                 "maximum": 9007199254740991
               },
               "outFrame": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sourceStartFrame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sourceEndFrame": {
                 "type": "integer",
                 "exclusiveMinimum": 0,
                 "maximum": 9007199254740991

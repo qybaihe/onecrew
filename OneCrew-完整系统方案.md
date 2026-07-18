@@ -373,14 +373,23 @@ export interface JobRecord {
 
 | 能力 | 首选 | 备用 | 备注 |
 |---|---|---|---|
-| 剧本、翻译、VLM | 支持结构化 JSON 与视觉输入的大模型 API | 第二个兼容 Provider | 不在业务代码中绑定具体模型名 |
-| 图片 | Seedream API | 兼容图片生成 API | 角色表、场景、道具、海报 |
-| 视频 | Seedance，前提是账号 API 已开通 | Veo API | 文生视频、图生视频、参考图和首尾帧 |
-| 配音 | ElevenLabs | CosyVoice 自建 API | 仅中文和英文 |
+| 剧本、翻译 | OpenCode Go `glm-5.2` | deterministic Mock LLM | 使用 OpenAI-compatible Chat Completions；模型名只进入 Provider 配置 |
+| VLM | OpenCode Go `minimax-m3` | deterministic Mock VLM | 使用 Anthropic-compatible Messages；当前 QC 在调用前把视频抽帧为受控图片 |
+| 图片 | Agnes Image 2.1 Flash | deterministic Mock Image | 文生图、图生图和多参考图；结果物化到受控 S3/MinIO |
+| 视频 | Agnes Video V2.0 | deterministic Mock Video | 异步轮询；结果物化到受控 S3/MinIO |
+| 配音 | Xiaomi MiMo V2.5 TTS | deterministic Mock TTS | 仅中文和英文；非流式 Base64 音频写入受控 S3/MinIO |
 | 对口型 | MuseTalk 内部 API | 转人工 | 仅必要的对白近景 |
 | 设计 | Open Design Adapter | 人工上传 Design Pack | 不作为最终视频渲染器 |
 | 渲染 | Remotion Renderer | 本地备用渲染节点 | 唯一正式渲染通道 |
 | 发布 | 平台官方 API | 人工发布 | 不虚构未获审核的发布权限 |
+
+#### 2026-07-16 Provider 选型变更
+
+- 原因：实际可用凭证已经覆盖 OpenCode Go、Agnes AI 与 Xiaomi MiMo，原推荐的 OpenAI、Seedream/Seedance 和 ElevenLabs 凭证并未提供。
+- 影响：只替换 `packages/providers` 内的真实 Primary Adapter 和对应环境变量；共享请求/响应契约、BullMQ Job、预算与审计、Mock Fallback、资产版本链和上层业务 API 保持不变。
+- 协议边界：`glm-5.2` 使用 `/chat/completions`，`minimax-m3` 使用 `/messages`，二者不得误接到 OpenAI Responses API；Agnes 图片为同步调用，Agnes 视频为异步任务；MiMo TTS 使用 `/chat/completions` 返回 Base64 音频。
+- 成本边界：OpenCode Go 是订阅额度，Agnes Image/Video 与 MiMo V2.5 TTS 在接入当日文档中为限时免费，因此默认单次边际成本记为 `0`；服务恢复计费或启用 Zen 余额回退时必须先更新环境中的人民币单价。
+- 安全边界：所有 Key 只进入被 Git 忽略的本机 `.env` 或 Secret Manager；Provider 返回的媒体必须写入受控 S3/MinIO 后才能成为 OneCrew 资产。
 
 ### 7.2 Provider 接口
 
@@ -485,7 +494,7 @@ Open Design 项目或 DESIGN.md
 
 ## 9. Remotion 专业渲染系统
 
-### 9.1 六个固定 Composition
+### 9.1 六个交付 Composition + 一个隔离的技术 Smoke
 
 | Composition | 画幅 | 默认时长 | 用途 |
 |---|---:|---:|---|
@@ -495,8 +504,9 @@ Open Design 项目或 DESIGN.md
 | `Teaser15Vertical` | 9:16 | 15 秒 | TikTok/抖音短预告 |
 | `Bumper6` | 9:16 / 1:1 | 6 秒 | 投放广告 |
 | `MotionPoster` | 9:16 / 1:1 | 5～8 秒 | 动态海报和封面 |
+| `PipelineSmoke` | 16:9 / 9:16 / 1:1 | 1～15 秒 | 单镜头技术验链，禁止发布为正片 |
 
-不允许为每个项目复制一套 Composition。项目差异全部来自 `RenderManifest` 和 `Design Pack`。
+不允许为每个项目复制一套 Composition。项目差异全部来自 `RenderManifest` 和 `Design Pack`。`PipelineSmoke` 不计入交付物，不可绕过正片的 60～90 秒内容门禁。
 
 ### 9.2 可复用 Remotion 组件
 
@@ -851,7 +861,7 @@ onecrew/
 ├── apps/
 │   ├── api/                  # Fastify REST、Feishu Webhook、鉴权
 │   ├── worker/               # BullMQ、LangGraph、Provider 调用、QC
-│   ├── remotion/             # 六个 Composition、Player、Renderer
+│   ├── remotion/             # 六个交付 Composition、隔离 Smoke、Player、Renderer
 │   └── preview/              # 只读预览页，不是第二个管理后台
 ├── packages/
 │   ├── contracts/            # TS 类型、Zod、JSON Schema
@@ -937,7 +947,7 @@ onecrew/
 
 ### 阶段 5：Remotion
 
-- 实现六个 Composition。
+- 实现六个交付 Composition 和一个不可发布为正片的 `PipelineSmoke`。
 - 实现中英字幕、标题、名牌、Logo、CTA、安全区和横竖版。
 - 实现 Player 预览和服务端 Render API。
 - 接入 Design Pack 和 RenderManifest。
@@ -1013,7 +1023,7 @@ onecrew/
 
 - [x] Open Design/`DESIGN.md` 可以编译成版本化 Design Pack。
 - [x] Remotion 是唯一正式渲染器。
-- [x] 六个 Composition 都可运行。
+- [x] 六个交付 Composition 与隔离的 `PipelineSmoke` 都可运行。
 - [x] Design Pack 修改后，无需重新生成镜头即可更新全部物料。
 
 ### API 与工作流
