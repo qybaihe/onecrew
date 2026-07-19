@@ -138,6 +138,65 @@ function mockStructuredOutput(input: LlmProviderRequest): Record<string, unknown
       return parsed as Record<string, unknown>;
     }
   }
+  if (input.outputSchema?.title === 'OneCrewRegionalCulturePack') {
+    const regionMatch = input.prompt.match(/目标地区：([^（\n]+)/)?.[1]?.trim() ?? 'america';
+    const region = (['america', 'russia', 'uk'].find((r) => regionMatch.toLowerCase().includes(r)) ?? 'america') as
+      | 'america'
+      | 'russia'
+      | 'uk';
+    const label = { america: '美国', russia: '俄罗斯', uk: '英国' }[region];
+    const themesByRegion: Record<'america' | 'russia' | 'uk', string[]> = {
+      america: ['龙族奇幻浪漫', 'fated mate 命定伴侣', '契约婚姻', 'billionaire 强势男主', '复仇逆袭'],
+      russia: ['二战史诗', '寡头权力斗争', '东正教宿命', '冰雪王国', '硬汉复仇'],
+      uk: ['摄政时期浪漫', '贵族秘辛', '阶级跨越', '侦探悬疑', '职场智斗'],
+    };
+    const spiritByRegion: Record<'america' | 'russia' | 'uk', string[]> = {
+      america: ['命运翻转', '被低估的女主逆袭', '禁忌之恋', '女性自我主张'],
+      russia: ['忍受与救赎', '家庭与祖国高于个人', '男性的沉默担当', '命运不可逃避'],
+      uk: ['克制的激情', '尊严与体面', '智慧胜于蛮力', '命运与阶级博弈'],
+    };
+    const motifsByRegion: Record<'america' | 'russia' | 'uk', string[]> = {
+      america: ['月光', '龙穴与中世纪城堡', '现代豪宅', '满月', '誓约戒指'],
+      russia: ['雪原', '洋葱顶教堂', '苏联时代建筑', '军大衣', '东正教圣像'],
+      uk: ['乔治王朝庄园', '雨夜伦敦街道', '茶会与舞会', '手写书信', '定制西装'],
+    };
+    const taboosByRegion: Record<'america' | 'russia' | 'uk', string[]> = {
+      america: ['避免中式婆媳关系', '避免修仙渡劫设定', '避免东亚家族伦理戏'],
+      russia: ['避免 LGBTQ+ 主线', '避免对东正教不敬的符号'],
+      uk: ['避免过度裸露与直白情欲', '避免不尊重王室与历史的桥段'],
+    };
+    const referenceByRegion: Record<'america' | 'russia' | 'uk', { title: string; whyItWorks: string }[]> = {
+      america: [{
+        title: 'Claimed by the Dragon',
+        whyItWorks: '龙族诅咒 + 命定伴侣 + 美国中年女性受众 + 每集 cliffhanger 结尾，证明西方奇幻浪漫题材在美国市场的爆发力。',
+      }],
+      russia: [{
+        title: '本地历史剧爆款（虚构示例）',
+        whyItWorks: '强情节 + 家庭荣誉 + 男性英雄主义，契合俄罗斯受众对"牺牲-救赎"弧线的偏好。',
+      }],
+      uk: [{
+        title: 'Bridgerton',
+        whyItWorks: '摄政时期浪漫 + 阶级张力 + 克制的激情，验证英式时代剧的全球吸引力。',
+      }],
+    };
+    return {
+      region,
+      regionLabel: label,
+      audienceProfile:
+        region === 'america'
+          ? 'ReelShort / DramaBox 中年女性与千禧一代女性，偏好 1-3 分钟竖屏 cliffhanger 短剧'
+          : region === 'russia'
+            ? '偏好强情节与家庭荣誉叙事的本土短剧受众'
+            : '偏好克制张力与时代剧美学的英剧受众',
+      themes: themesByRegion[region],
+      spiritValues: spiritByRegion[region],
+      taboos: taboosByRegion[region],
+      hookStructures: ['开场 5 秒高冲突画面（献祭/追逐/变身）', '每 60 秒一个反转', '每集结尾命运级 cliffhanger'],
+      visualMotifs: motifsByRegion[region],
+      referenceCases: referenceByRegion[region],
+      localizedBrief: `面向${label}市场的本土化短剧：守星人穿越命运之门，与被封印的龙王结成命定伴侣，在每集 60 秒一个反转的节奏中解开诅咒。`,
+    };
+  }
   if (input.outputSchema?.title === 'OneCrewCreativeStoryPlan') {
     const episodeCount = Math.min(12, Math.max(1, Number(input.prompt.match(/必须输出\s+(\d+)\s+集/)?.[1] ?? 1)));
     return {
