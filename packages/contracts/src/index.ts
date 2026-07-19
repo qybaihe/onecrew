@@ -1062,7 +1062,7 @@ const providerRequestBase = {
 export const llmProviderRequestSchema = z.object({
   ...providerRequestBase,
   capability: z.literal('llm'),
-  operation: z.enum(['script', 'translate', 'marketing_copy']),
+  operation: z.enum(['script', 'translate', 'marketing_copy', 'regional_culture']),
   prompt: z.string().min(1).max(100_000),
   locale: localeSchema,
   imageUris: z.array(z.url()).max(20).default([]),
@@ -1332,6 +1332,37 @@ export const creativeStoryPlanRequestSchema = z.object({
   episodeCount: z.number().int().min(1).max(12).default(3),
   route: providerRouteSchema.default('primary'),
   generationNonce: z.number().int().nonnegative(),
+  regionalCulturePackJobId: idSchema.optional(),
+});
+
+export const regionalCulturePackRegionSchema = z.enum(['america', 'russia', 'uk']);
+
+export const regionalCulturePackRequestSchema = z.object({
+  region: regionalCulturePackRegionSchema,
+  brief: z.string().min(1).max(20_000),
+  route: providerRouteSchema.default('primary'),
+  generationNonce: z.number().int().nonnegative(),
+});
+
+export const regionalCulturePackSchema = z.object({
+  region: regionalCulturePackRegionSchema,
+  regionLabel: z.string().min(1).max(200),
+  audienceProfile: z.string().min(1).max(4_000),
+  themes: z.array(z.string().min(1).max(500)).min(3).max(12),
+  spiritValues: z.array(z.string().min(1).max(500)).min(3).max(12),
+  taboos: z.array(z.string().min(1).max(500)).max(12),
+  hookStructures: z.array(z.string().min(1).max(500)).min(2).max(8),
+  visualMotifs: z.array(z.string().min(1).max(500)).min(3).max(12),
+  referenceCases: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(300),
+        whyItWorks: z.string().min(1).max(2_000),
+      }),
+    )
+    .min(1)
+    .max(6),
+  localizedBrief: z.string().min(1).max(20_000),
 });
 
 export const creativeStoryPlanSchema = z.object({
@@ -1438,6 +1469,8 @@ export const contractSchemas = {
   CreativeStoryPlanRequest: creativeStoryPlanRequestSchema,
   CreativeStoryPlan: creativeStoryPlanSchema,
   CreativeStoryPlanApplyResult: creativeStoryPlanApplyResultSchema,
+  RegionalCulturePack: regionalCulturePackSchema,
+  RegionalCulturePackRequest: regionalCulturePackRequestSchema,
 } as const;
 
 export type Locale = z.infer<typeof localeSchema>;
@@ -1504,6 +1537,9 @@ export type CreativeReusableAssetReuseResult = z.infer<typeof creativeReusableAs
 export type CreativeStoryPlanRequest = z.infer<typeof creativeStoryPlanRequestSchema>;
 export type CreativeStoryPlan = z.infer<typeof creativeStoryPlanSchema>;
 export type CreativeStoryPlanApplyResult = z.infer<typeof creativeStoryPlanApplyResultSchema>;
+export type RegionalCulturePackRegion = z.infer<typeof regionalCulturePackRegionSchema>;
+export type RegionalCulturePackRequest = z.infer<typeof regionalCulturePackRequestSchema>;
+export type RegionalCulturePack = z.infer<typeof regionalCulturePackSchema>;
 export type QCRecord = z.infer<typeof qcRecordSchema>;
 export type TechnicalQcExpectation = z.infer<typeof technicalQcExpectationSchema>;
 export type TechnicalQcReport = z.infer<typeof technicalQcReportSchema>;
