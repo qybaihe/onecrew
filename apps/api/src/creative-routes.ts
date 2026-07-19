@@ -21,6 +21,7 @@ import {
   creativeWorkflowGroupRunRequestSchema,
   episodeSpecSchema,
   propSpecSchema,
+  regionalCulturePackRequestSchema,
   sceneSpecSchema,
   shotSpecSchema,
 } from '@onecrew/contracts';
@@ -44,10 +45,13 @@ import {
   CreativeStoryPlanOutputError,
   type CreativeStoryPlanner,
   ProviderSubmissionInProgressError,
+  RegionalCulturePackNotReadyError,
+  RegionalCulturePlannerOutputError,
   type CreativeGenerationBatchOrchestrator,
   type CreativeReferenceGridProcessor,
   type ProviderOrchestrator,
   type QcOrchestrator,
+  type RegionalCulturePlanner,
 } from '@onecrew/workflows';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z, ZodError } from 'zod';
@@ -70,6 +74,7 @@ export interface CreativeRouteOptions {
   batchGenerator?: Pick<CreativeGenerationBatchOrchestrator, 'submit' | 'get' | 'latest' | 'cancel' | 'retry'>;
   continuityQc?: Pick<QcOrchestrator, 'submit'>;
   storyPlanner?: Pick<CreativeStoryPlanner, 'submit' | 'preview' | 'apply'>;
+  regionalCulturePlanner?: Pick<RegionalCulturePlanner, 'submit' | 'preview'>;
   referenceGrid?: Pick<CreativeReferenceGridProcessor, 'process'>;
   reusableAssets?: Pick<CreativeRepository, 'searchReusableAssets' | 'reuseAsset'>;
   workflowGroups?: Pick<
@@ -266,6 +271,46 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
         batch: batch.value,
         batchVersion: batch.version,
       };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.post('/v1/creative/projects/:projectId/regional-culture-packs', async (request, reply) => {
+    if (!options?.regionalCulturePlanner)
+      return creativeError(reply, new RegionalCulturePlannerNotConfiguredError());
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingRegionalCulturePackIdempotencyKeyError();
+      const { projectId } = request.params as { projectId: string };
+      const accepted = await options.regionalCulturePlanner.submit(
+        projectId,
+        regionalCulturePackRequestSchema.parse(request.body),
+        idempotencyKey,
+      );
+      reply.code(202);
+      return {
+        job_id: accepted.jobId,
+        status: accepted.status,
+        mode: accepted.mode,
+        provider: accepted.provider,
+        route: accepted.route,
+        estimated_cost_cny: accepted.estimatedCostCny,
+        status_url: accepted.statusUrl,
+        replayed: accepted.replayed,
+        ...(accepted.warning ? { warning: accepted.warning } : {}),
+      };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.get('/v1/creative/projects/:projectId/regional-culture-packs/:jobId', async (request, reply) => {
+    if (!options?.regionalCulturePlanner)
+      return creativeError(reply, new RegionalCulturePlannerNotConfiguredError());
+    try {
+      const { projectId, jobId } = request.params as { projectId: string; jobId: string };
+      return await options.regionalCulturePlanner.preview(projectId, jobId);
     } catch (error) {
       return creativeError(reply, error);
     }
@@ -727,6 +772,20 @@ export class CreativeStoryPlannerNotConfiguredError extends Error {
   }
 }
 
+export class RegionalCulturePlannerNotConfiguredError extends Error {
+  constructor() {
+    super('Regional culture planner is not configured');
+    this.name = 'RegionalCulturePlannerNotConfiguredError';
+  }
+}
+
+export class MissingRegionalCulturePackIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for regional culture pack generation');
+    this.name = 'MissingRegionalCulturePackIdempotencyKeyError';
+  }
+}
+
 export class CreativeReferenceGridNotConfiguredError extends Error {
   constructor() {
     super('Creative reference-grid preprocessing is not configured');
@@ -806,6 +865,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeGenerationNotConfiguredError ||
     error instanceof CreativeContinuityQcNotConfiguredError ||
     error instanceof CreativeStoryPlannerNotConfiguredError ||
+    error instanceof RegionalCulturePlannerNotConfiguredError ||
     error instanceof CreativeReferenceGridNotConfiguredError ||
     error instanceof CreativeReusableAssetsNotConfiguredError ||
     error instanceof CreativeWorkflowGroupsNotConfiguredError
@@ -813,7 +873,11 @@ function creativeError(reply: FastifyReply, error: unknown) {
     reply.code(503);
   } else if (error instanceof RecordNotFoundError) {
     reply.code(404);
-  } else if (error instanceof VersionConflictError || error instanceof CreativeStoryPlanNotReadyError) {
+  } else if (
+    error instanceof VersionConflictError ||
+    error instanceof CreativeStoryPlanNotReadyError ||
+    error instanceof RegionalCulturePackNotReadyError
+  ) {
     reply.code(409);
   } else if (error instanceof IdempotencyConflictError || error instanceof ProviderSubmissionInProgressError) {
     reply.code(409);
@@ -826,6 +890,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof MissingCreativeGenerationIdempotencyKeyError ||
     error instanceof MissingCreativeContinuityQcIdempotencyKeyError ||
     error instanceof MissingCreativeStoryPlanIdempotencyKeyError ||
+    error instanceof MissingRegionalCulturePackIdempotencyKeyError ||
     error instanceof MissingCreativeReferenceGridIdempotencyKeyError ||
     error instanceof MissingCreativeReusableAssetIdempotencyKeyError ||
     error instanceof MissingCreativeWorkflowGroupIdempotencyKeyError ||
@@ -837,6 +902,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeContinuityQcAssetError ||
     error instanceof CreativeStoryPlanOutputError ||
     error instanceof CreativeStoryPlanValidationError ||
+    error instanceof RegionalCulturePlannerOutputError ||
     error instanceof InvalidCreativeArchiveError ||
     /LocalMiniDrama|Archive|project\.json|declared media file|archive root|absolute path/i.test(message)
   ) {

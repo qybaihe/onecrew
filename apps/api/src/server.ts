@@ -18,6 +18,7 @@ import {
   CreativeReferenceGridProcessor,
   CreativeStoryPlanner,
   LocalizationOrchestrator,
+  RegionalCulturePlanner,
   ProductionWorkflow,
   PublishOrchestrator,
   ProviderCallbackProcessor,
@@ -71,6 +72,7 @@ const creativeGenerationBatchOrchestrator = new CreativeGenerationBatchOrchestra
   providerOrchestrator,
 );
 const creativeStoryPlanner = new CreativeStoryPlanner(repositories.creative, providerOrchestrator);
+const regionalCulturePlanner = new RegionalCulturePlanner(repositories.creative, providerOrchestrator);
 const creativeReferenceGridProcessor = new CreativeReferenceGridProcessor(
   repositories.creative,
   repositories.assets,
@@ -259,6 +261,7 @@ const app = createApp({
     batchGenerator: creativeGenerationBatchOrchestrator,
     continuityQc: qcOrchestrator,
     storyPlanner: creativeStoryPlanner,
+    regionalCulturePlanner,
     referenceGrid: creativeReferenceGridProcessor,
     reusableAssets: repositories.creative,
     workflowGroups: repositories.creativeWorkflowGroups,
