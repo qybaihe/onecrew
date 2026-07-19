@@ -909,6 +909,16 @@ describe('creative routes', () => {
       logger: false,
       probes: [],
       creatives: {
+        repository: {
+          async importBundle() { throw new Error('not used'); },
+          async getBundle() { throw new Error('not used'); },
+          async getRecordVersions() { throw new Error('not used'); },
+          async listProjects() { throw new Error('not used'); },
+          async listAssets() { throw new Error('not used'); },
+          async updateEntity() { throw new Error('not used'); },
+          async updateEpisode() { throw new Error('not used'); },
+          async updateShot() { throw new Error('not used'); },
+        },
         regionalCulturePlanner: {
           async submit(id, request, idempotencyKey) {
             if (id !== projectId) throw new Error('wrong project');
@@ -931,7 +941,7 @@ describe('creative routes', () => {
               job: {
                 jobId: requestedJobId,
                 projectId,
-                capability: 'llm',
+                capability: 'plan',
                 provider: 'mock-llm-primary',
                 model: 'deterministic-v1',
                 mode: 'mock',
@@ -991,7 +1001,22 @@ describe('creative routes', () => {
   });
 
   it('returns 503 when regional culture planner is not wired', async () => {
-    const app = createApp({ logger: false, probes: [], creatives: {} });
+    const app = createApp({
+      logger: false,
+      probes: [],
+      creatives: {
+        repository: {
+          async importBundle() { throw new Error('not used'); },
+          async getBundle() { throw new Error('not used'); },
+          async getRecordVersions() { throw new Error('not used'); },
+          async listProjects() { throw new Error('not used'); },
+          async listAssets() { throw new Error('not used'); },
+          async updateEntity() { throw new Error('not used'); },
+          async updateEpisode() { throw new Error('not used'); },
+          async updateShot() { throw new Error('not used'); },
+        },
+      },
+    });
     const response = await app.inject({
       method: 'POST',
       url: '/v1/creative/projects/prj_x/regional-culture-packs',
