@@ -12,12 +12,52 @@ OneCrew 是一个由飞书控制、API 驱动的中英双语 AI 短剧生产与�
 
 正式视频统一由 Remotion 渲染。项目业务状态保存在 PostgreSQL，媒体保存在 S3/MinIO，Redis/BullMQ 负责异步任务；飞书是唯一审批控制面，本地创作台负责工程浏览、素材组织、分镜画布、工程导入和成片审阅。
 
-> 当前版本：`0.1.0`。阶段 0～8 已完成本地实现和 Mock 端到端验证。2026-07-16 已用操作者提供的凭证通过 LLM、VLM、图片、视频和 TTS 五项最小真实烟雾测试；2026-07-18 已通过真实飞书租户校验 Base 六表及全部字段。真实完整生产 E2E、飞书回调/卡片实租户闭环和平台直发仍待验证，仓库不会提交凭证或把 Mock 结果描述成真实厂商结果。
+> 当前版本：`0.1.0`。阶段 0～8 已完成本地实现和 Mock 端到端验证。2026-07-16 已用操作者提供的凭证通过 LLM、VLM、图片、视频和 TTS 五项最小真实烟雾测试；2026-07-18 已通过真实飞书租户校验 Base 六表及全部字段；2026-07-19 已增加地域本土化、出海预算决策与一人剧组工作台，并将 Landing 生产版发布到 EdgeOne。真实完整生产 E2E、飞书回调/卡片实租户闭环和平台直发仍待验证，仓库不会提交凭证或把 Mock 结果描述成真实厂商结果。
+
+[国内 Landing](https://onecrew-landing-hf5xmbvc.edgeone.cool/) · [地域本土化演示文档](./docs/regional-localization-demo.md) · [API 文档](./docs/api.md)
+
+## 产品实拍
+
+### 一人剧组工作台
+
+工作台把项目、剧集/分镜、版本资产、运行任务、渲染交付和生产健康收拢到同一个可审计界面。
+
+![OneCrew 一人剧组工作台](./docs/assets/readme/workbench-dashboard.png)
+
+### 地域本土化 Agent
+
+从目标市场和故事需求出发，可直接生成本土化剧本，也可先生成地域文化包再注入故事规划。界面会明确展示 Job、Provider、Model、耗时和 Mock/Real 边界。
+
+![OneCrew 地域本土化 Agent](./docs/assets/readme/regional-localization-agent.png)
+
+### 出海预算决策 Agent
+
+输入 IP、目标市场、总预算、决策周期、发行/变现方式与风险偏好，产出金额对账、阶段拨款、渠道策略、KPI 闸门、一人执行节奏、风险与证据。
+
+![OneCrew 出海预算决策 Agent](./docs/assets/readme/budget-allocation-agent.png)
+
+> 上述图片均为当前 React 工作台的浏览器实拍，不是设计稿。开发环境中的 `MOCK` 与真实 Provider 会在 Job 层显式区分。
+
+## 当前可用 Agent 与自动化角色
+
+| Agent / 自动化角色 | 解决的问题 | 关键产物 | 当前状态 |
+| --- | --- | --- | --- |
+| `RegionalCulturePlanner` | 在写剧本之前完成美国/俄罗斯/英国文化适配 | 受众、主题、价值、禁忌、Hook、视觉母题、语言策略、参考案例 8 类字段 | Mock E2E 已跑通；Real 复用已烟测 LLM 路由 |
+| `BudgetAllocationPlanner` | 把爆款 IP、AI 产能和有限预算变成可停损的北美上市计划 | 分类预算、阶段放款、渠道策略、KPI 闸门、单人节奏、假设与风险 | 契约、API、UI、Mock 与金额对账已完成 |
+| `CreativeStoryPlanner` | 把创作简报转成可写入工程的分集规划 | 分集剧情、剧本、角色/场景/道具；可引用地域文化包 Job | Mock 实操验证；Real 走统一 LLM Gateway |
+| 生成与连续性工作流 | 保持角色、场景、道具和相邻镜头一致 | 图片/视频版本、参考图映射、尾帧衔接、资产血缘 | Mock 浏览器实测；真实图片/视频 Adapter 烟测通过 |
+| `LocalizationOrchestrator` | 把中文母版转成可渲染的英文版本 | 结构化翻译、逐句 TTS、时长驱动时间线、字幕和 Locale Pack | 本地集成测试通过 |
+| QC + Human Recovery | 在发布前识别技术问题、语义偏差和连续性风险 | FFmpeg 指标、VLM 决策、持久化人工闸门与飞书四动作 | Mock/集成验证；真实飞书回调闭环待验证 |
+
+地域本土化、预算决策和故事规划都复用现有 LLM Provider Gateway，产物以可审计 Job artifact 保存。飞书负责通知、审批和人工决策，OneCrew 工作台负责上下文、资产、资金与执行证据。
 
 ## 主要功能
 
 | 模块 | 能力 | 当前状态 |
 | --- | --- | --- |
+| 一人剧组工作台 | 工作台、策划、制作、资产、交付五个主入口，聚合 Job、QC、渲染、实验和审计快照 | 已实现并完成桌面/移动端浏览器验证 |
+| 地域本土化 | 直接生成本土化剧本，或先产出 8 字段地域文化包再注入故事规划 | America Mock E2E 已跑通；Russia/UK 参数化可用 |
+| 出海预算决策 | 按市场、总预算、周期、发行/变现模式与风险偏好生成可对账、可阶段放款的执行方案 | 契约、API、UI、Mock 与单元测试已完成 |
 | 项目与剧本 | 多项目、多剧集、剧本计划、角色/场景/道具库和结构化分镜 | 已实现 |
 | 故事规划 | 从创作简报生成指定集数的剧情、剧本与角色/场景/道具设定；预览后原子追加 | Mock 实操验证；Real 需凭证 |
 | 创作工作台 | 剧本编辑、分镜列表/画布、角色/场景/道具编辑、资产绑定和成片审阅 | 已实现并实操验证 |
@@ -102,7 +142,9 @@ bash scripts/bootstrap-local.sh
 | --- | --- |
 | `http://127.0.0.1:3000/healthz` | API 进程存活检查 |
 | `http://127.0.0.1:3000/readyz` | PostgreSQL、Redis、MinIO 就绪检查 |
-| `http://127.0.0.1:4173` | 创作台、分镜画布和 Remotion Player 审片页 |
+| `http://127.0.0.1:4173/#/dashboard` | 一人剧组工作台与项目总览 |
+| `http://127.0.0.1:4173/#/planning` | 地域本土化、预算决策与故事规划 Agent |
+| `http://127.0.0.1:4174` | 本地 Landing；国内生产版见 [EdgeOne](https://onecrew-landing-hf5xmbvc.edgeone.cool/) |
 | `http://127.0.0.1:59001` | MinIO 本地管理控制台 |
 
 验证服务：
@@ -119,9 +161,9 @@ pnpm infra:status
 pnpm infra:down
 ```
 
-## 使用创作台
+## 使用工作台与创作台
 
-打开 `http://127.0.0.1:4173/#studio` 后，可以直接完成以下工作：
+打开 `http://127.0.0.1:4173/#/dashboard` 查看项目状态和待处理任务；进入 `#/planning` 运行地域本土化、预算决策和故事规划；进入 `#/production` 后，可以直接完成以下创作工作：
 
 1. 在顶部切换当前项目，或导入 `.onecrew.zip` / 兼容 ZIP 工程；
 2. 在“故事规划”填写创作简报与新增集数。异步 Job 会返回可预览的分集剧情、剧本、角色、场景和道具设定；只有点击“写入可编辑工程”才会原子追加，已有剧集与设定不会被替换；
@@ -207,7 +249,10 @@ pnpm demo:mock-e2e
 | 功能 | 端点 |
 | --- | --- |
 | 健康检查 | `GET /healthz`、`GET /readyz` |
+| 工作台快照 | `GET /v1/workbench/snapshot?projectId=...` |
 | 创作项目 | `GET /v1/creative/projects`、`GET /v1/creative/projects/:projectId` |
+| 地域文化包 | `POST /v1/creative/projects/:projectId/regional-culture-packs`；`GET .../regional-culture-packs/:jobId` |
+| 出海预算方案 | `POST /v1/creative/projects/:projectId/budget-allocation-plans`；`GET .../budget-allocation-plans/:jobId` |
 | 故事规划 | `POST /v1/creative/projects/:projectId/story-plans`生成；`GET .../story-plans/:jobId`预览；`POST .../story-plans/:jobId/apply`追加 |
 | 剧本/分镜编辑 | `PATCH /v1/creative/episodes/:episodeId`、`PATCH /v1/creative/shots/:shotId` |
 | 组合参考图拆分 | `POST /v1/creative/entities/:entityId/reference-grids` |
@@ -312,13 +357,14 @@ pnpm feishu:setup
 | `pnpm dev` | 并行启动所有支持 dev 的 workspace |
 | `pnpm start:api` | 启动 API 进程 |
 | `pnpm start:worker` | 启动异步 Worker |
-| `pnpm preview:dev` | 启动创作台、分镜画布和审片页 |
+| `pnpm preview:dev` | 启动一人剧组工作台、Agent 策划页、分镜画布和审片页 |
 | `pnpm remotion:studio` | 打开 Remotion Studio |
 | `pnpm remotion:demo` | 渲染固定示例 Composition |
 | `pnpm remotion:final-smoke` | 运行 Final 渲染烟雾测试 |
 | `pnpm remotion:pipeline-smoke -- <projectId> <shotId>` | 使用单个真实镜头运行 1～15 秒独立技术验链，不会伪装成正片 |
 | `pnpm remotion:real-project-e2e -- <projectId> <episodeId>` | 仅在完整剧集的多镜头素材、对白与 QC 全部达标时生成双语正片和发布包 |
 | `pnpm demo:mock-e2e` | 运行完整 Mock 生产闭环 |
+| `pnpm landing:deploy:edgeone` | 构建相对路径 Landing 并发布到已关联的 EdgeOne Makers 项目（需登录或传入 Token） |
 | `pnpm contracts:generate` | 重新生成 JSON Schema |
 | `pnpm db:generate` | 生成 Drizzle migration |
 | `pnpm db:check` | 检查 schema 与 migration |
@@ -352,7 +398,8 @@ apps/
   api/                 Fastify API、健康检查和 HTTP 路由
   worker/              BullMQ Worker、生成/渲染/QC/发布消费者
   remotion/            Composition、组件、Player 与唯一 Final Renderer
-  preview/             React 创作台、分镜画布与 Remotion 审片页
+  preview/             React 一人剧组工作台、决策 Agent、分镜画布与 Remotion 审片页
+  landing/             品牌与团队展示站，支持 GitHub Pages 与 EdgeOne Makers 构建
 packages/
   config/              Zod 环境变量契约
   contracts/           共享契约与 JSON Schema
@@ -386,9 +433,11 @@ docs/                   API、运维、配置、验证与设计文档
 
 ## 测试与当前完成度
 
-最近一次仓库级回归（2026-07-18）：
+最近一次仓库级回归（2026-07-19）：
 
 - 18 个 workspace 的 lint 和 build 全部通过，32 个 typecheck 任务通过；
+- 地域本土化、预算决策、工作台快照的契约、API、Provider 路由、Mock 输出和 React 页面已通过 lint、typecheck、unit test 与 build；
+- Landing 已以 EdgeOne Makers production direct-upload 方式发布，公网根路径、静态资源、移动端布局与 GitHub 跳转已在线验证；
 - 106 个单元测试通过；
 - 43 个集成测试通过；
 - PostgreSQL、Redis、MinIO 均为 healthy；真实飞书 Base 的 `项目 / 分镜 / 资产 / 生成任务 / 质检 / 出海实验` 六表及全部字段校验通过，未创建或修改字段；
@@ -477,6 +526,7 @@ REMOTION_FINAL_MAX_DIMENSION=640 pnpm start:worker
 - [完整 Mock 演示](./docs/demo.md)
 - [飞书配置](./docs/feishu-setup.md)
 - [Provider 配置](./docs/provider-setup.md)
+- [地域本土化 Agent 演示](./docs/regional-localization-demo.md)
 - [Design Pack](./docs/design-pack.md)
 - [Remotion 渲染](./docs/remotion.md)
 - [自动质检](./docs/qc.md)

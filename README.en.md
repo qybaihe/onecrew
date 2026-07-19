@@ -12,12 +12,52 @@ OneCrew is a Feishu-controlled, API-driven production system for bilingual Chine
 
 Remotion is the only final video renderer. PostgreSQL stores business state, S3/MinIO stores controlled media, and Redis/BullMQ runs asynchronous jobs. Feishu is the only approval control plane, while the local Studio handles project browsing, asset organization, the storyboard canvas, project import, and final review.
 
-> Current version: `0.1.0`. Stages 0–8 have been implemented and verified through a local deterministic Mock end-to-end run. On 2026-07-16, operator-supplied credentials passed minimal real smoke tests for LLM, VLM, image, video, and TTS. On 2026-07-18, a real Feishu tenant validated all six Base tables and their fields. A complete real production E2E, live Feishu callback/card workflow, and direct platform publishing remain to be verified. Credentials are never committed and Mock results are never presented as real provider output.
+> Current version: `0.1.0`. Stages 0–8 have been implemented and verified through a local deterministic Mock end-to-end run. On 2026-07-16, operator-supplied credentials passed minimal real smoke tests for LLM, VLM, image, video, and TTS. On 2026-07-18, a real Feishu tenant validated all six Base tables and their fields. On 2026-07-19, OneCrew added regional localization, overseas budget allocation, and the unified one-person-crew workbench, and deployed the production Landing site to EdgeOne. A complete real production E2E, live Feishu callback/card workflow, and direct platform publishing remain to be verified. Credentials are never committed and Mock results are never presented as real provider output.
+
+[China-accessible Landing](https://onecrew-landing-hf5xmbvc.edgeone.cool/) · [Regional-localization demo](./docs/regional-localization-demo.md) · [API documentation](./docs/api.md)
+
+## Product screenshots
+
+### One-person crew workbench
+
+The workbench brings projects, episodes/shots, versioned assets, running Jobs, rendered deliverables, and production health into one auditable interface.
+
+![OneCrew one-person crew workbench](./docs/assets/readme/workbench-dashboard.png)
+
+### Regional Localization Agent
+
+Start from a target market and story brief, then generate a localized script directly or create a regional culture pack before story planning. The UI exposes the Job, Provider, Model, duration, and Mock/Real boundary.
+
+![OneCrew Regional Localization Agent](./docs/assets/readme/regional-localization-agent.png)
+
+### Overseas Budget Decision Agent
+
+Provide the IP, target market, total budget, decision horizon, distribution/monetization model, and risk tolerance. The Agent returns reconciled allocations, staged capital releases, channel strategy, KPI gates, a one-person operating cadence, risks, and evidence.
+
+![OneCrew Overseas Budget Decision Agent](./docs/assets/readme/budget-allocation-agent.png)
+
+> These are browser captures of the current React workbench, not design mockups. Development Jobs explicitly distinguish `MOCK` output from real Provider execution.
+
+## Available Agents and automated roles
+
+| Agent / automated role | Problem addressed | Primary artifact | Current status |
+| --- | --- | --- | --- |
+| `RegionalCulturePlanner` | Adapt a story for the US, Russia, or UK before script generation | Eight groups of audience, theme, value, taboo, hook, visual-motif, language, and reference-case fields | Mock E2E verified; Real reuses the smoke-tested LLM route |
+| `BudgetAllocationPlanner` | Turn a proven IP, AI capacity, and limited cash into a killable North America launch plan | Category allocation, release phases, channels, KPI gates, one-person cadence, assumptions, and risks | Contract, API, UI, Mock output, and amount reconciliation implemented |
+| `CreativeStoryPlanner` | Convert a creative brief into an appendable episode plan | Episode stories, scripts, and character/scene/prop definitions, optionally driven by a culture-pack Job | Mock runtime-verified; Real uses the shared LLM Gateway |
+| Generation and continuity workflow | Keep characters, settings, props, and adjacent shots consistent | Image/video versions, reference mappings, tail-frame continuity, and asset provenance | Mock browser-verified; real image/video adapters smoke-tested |
+| `LocalizationOrchestrator` | Convert the Chinese master into a renderable English version | Structured translation, per-line TTS, duration-driven timing, subtitles, and Locale Pack | Local integration path verified |
+| QC + Human Recovery | Catch technical defects, semantic drift, and continuity risk before release | FFmpeg metrics, VLM decision, durable human gates, and four Feishu actions | Mock/integration verified; live Feishu callback loop pending |
+
+Regional localization, budget allocation, and story planning reuse the existing LLM Provider Gateway, and their outputs remain auditable Job artifacts. Feishu owns notification, approval, and human decisions; the OneCrew workbench owns context, assets, capital, and execution evidence.
 
 ## Features
 
 | Area | Capability | Status |
 | --- | --- | --- |
+| One-person crew workbench | Five primary entries for workbench, planning, production, assets, and delivery, backed by aggregated Job, QC, render, experiment, and audit snapshots | Implemented and browser-verified on desktop/mobile |
+| Regional localization | Generate a localized script directly or produce an eight-field regional culture pack before story planning | America Mock E2E verified; Russia/UK parameterized |
+| Overseas budget decisions | Generate a reconciled, stage-gated plan from market, budget, horizon, distribution/monetization model, and risk tolerance | Contract, API, UI, Mock path, and unit tests implemented |
 | Projects and scripts | Multiple projects and episodes, script plans, character/scene/prop libraries, and structured storyboards | Implemented |
 | Story planning | Generate a requested number of episode stories, scripts, and character/scene/prop definitions from a brief; preview and atomically append | Mock runtime-verified; Real requires credentials |
 | Creative Studio | Script editing, storyboard list/canvas, character/scene/prop editing, asset binding, and final review | Implemented and browser-verified |
@@ -102,7 +142,9 @@ After startup:
 | --- | --- |
 | `http://127.0.0.1:3000/healthz` | API liveness |
 | `http://127.0.0.1:3000/readyz` | PostgreSQL, Redis, and MinIO readiness |
-| `http://127.0.0.1:4173` | Creative Studio, storyboard canvas, and Remotion Player review page |
+| `http://127.0.0.1:4173/#/dashboard` | One-person crew workbench and project overview |
+| `http://127.0.0.1:4173/#/planning` | Regional-localization, budget-decision, and story-planning Agents |
+| `http://127.0.0.1:4174` | Local Landing site; see the [EdgeOne production deployment](https://onecrew-landing-hf5xmbvc.edgeone.cool/) for a China-accessible version |
 | `http://127.0.0.1:59001` | Local MinIO administration console |
 
 Verify the environment:
@@ -119,9 +161,9 @@ Stop the local infrastructure with:
 pnpm infra:down
 ```
 
-## Using the Creative Studio
+## Using the workbench and Creative Studio
 
-Open `http://127.0.0.1:4173/#studio` to work with a project:
+Open `http://127.0.0.1:4173/#/dashboard` for project status and pending work, use `#/planning` for regional localization, budget decisions, and story planning, then open `#/production` for the following creative tasks:
 
 1. switch the active project in the top bar, or import a `.onecrew.zip` / compatible ZIP archive;
 2. enter a creative brief and episode count under **Story Planning**. The asynchronous Job returns a preview of episode stories, scripts, and character/scene/prop definitions. Nothing changes until you click **Write to editable project**; applying is atomic and append-only, so existing episodes and definitions are never replaced;
@@ -207,7 +249,10 @@ The local API base URL is `http://127.0.0.1:3000`.
 | Purpose | Endpoint |
 | --- | --- |
 | Health | `GET /healthz`, `GET /readyz` |
+| Workbench snapshot | `GET /v1/workbench/snapshot?projectId=...` |
 | Creative projects | `GET /v1/creative/projects`, `GET /v1/creative/projects/:projectId` |
+| Regional culture pack | `POST /v1/creative/projects/:projectId/regional-culture-packs`; `GET .../regional-culture-packs/:jobId` |
+| Overseas budget plan | `POST /v1/creative/projects/:projectId/budget-allocation-plans`; `GET .../budget-allocation-plans/:jobId` |
 | Story planning | `POST /v1/creative/projects/:projectId/story-plans` to generate; `GET .../story-plans/:jobId` to preview; `POST .../story-plans/:jobId/apply` to append |
 | Script/shot editing | `PATCH /v1/creative/episodes/:episodeId`, `PATCH /v1/creative/shots/:shotId` |
 | Composite-reference splitting | `POST /v1/creative/entities/:entityId/reference-grids` |
@@ -312,13 +357,14 @@ Table definitions, minimum permissions, event subscriptions, and callback securi
 | `pnpm dev` | Run every workspace with a dev task in parallel |
 | `pnpm start:api` | Start the API process |
 | `pnpm start:worker` | Start the asynchronous Worker |
-| `pnpm preview:dev` | Start the Creative Studio, storyboard canvas, and review app |
+| `pnpm preview:dev` | Start the one-person crew workbench, planning Agents, storyboard canvas, and review app |
 | `pnpm remotion:studio` | Open Remotion Studio |
 | `pnpm remotion:demo` | Render the fixed demo Compositions |
 | `pnpm remotion:final-smoke` | Run the Final-render smoke test |
 | `pnpm remotion:pipeline-smoke -- <projectId> <shotId>` | Run an isolated 1–15 second real single-shot pipeline smoke; it can never masquerade as an episode |
 | `pnpm remotion:real-project-e2e -- <projectId> <episodeId>` | Build bilingual masters and a release package only when the complete episode has sufficient distinct shot media, dialogue, and passing QC |
 | `pnpm demo:mock-e2e` | Run the complete Mock production loop |
+| `pnpm landing:deploy:edgeone` | Build the Landing site with relative assets and deploy it to the linked EdgeOne Makers project; requires an authenticated CLI or Token |
 | `pnpm contracts:generate` | Regenerate JSON Schemas |
 | `pnpm db:generate` | Generate a Drizzle migration |
 | `pnpm db:check` | Validate schema and migration state |
@@ -352,7 +398,8 @@ apps/
   api/                 Fastify API, health checks, and HTTP routes
   worker/              BullMQ consumers for generation/render/QC/publishing
   remotion/            Compositions, components, Player, and Final Renderer
-  preview/             React Creative Studio, storyboard canvas, and Remotion review UI
+  preview/             React one-person crew workbench, decision Agents, storyboard canvas, and Remotion review UI
+  landing/             Brand and team site with GitHub Pages and EdgeOne Makers builds
 packages/
   config/              Zod environment contract
   contracts/           Shared contracts and JSON Schemas
@@ -386,9 +433,11 @@ docs/                   API, operations, configuration, and verification docs
 
 ## Tests and current completion
 
-Latest repository regression (2026-07-18):
+Latest repository regression (2026-07-19):
 
 - lint and build passed across all 18 workspaces, with 32 typecheck tasks passing;
+- the regional-localization, budget-decision, and workbench-snapshot contracts, APIs, Provider routes, Mock outputs, and React pages passed lint, typecheck, unit tests, and build;
+- the Landing site was deployed through an EdgeOne Makers production direct upload; its public root, static assets, mobile layout, and GitHub links were verified online;
 - 106 unit tests passed;
 - 43 integration tests passed;
 - PostgreSQL, Redis, and MinIO were healthy; all fields in the six real Feishu Base tables (`Project / Shot / Asset / Generation Job / QC / Overseas Experiment`) validated without creating or changing fields;
@@ -477,6 +526,7 @@ Detailed design and operational references live under [`docs/`](./docs/). The RE
 - [Complete Mock demo](./docs/demo.md)
 - [Feishu setup](./docs/feishu-setup.md)
 - [Provider setup](./docs/provider-setup.md)
+- [Regional Localization Agent demo](./docs/regional-localization-demo.md)
 - [Design Packs](./docs/design-pack.md)
 - [Remotion rendering](./docs/remotion.md)
 - [Automated QC](./docs/qc.md)
