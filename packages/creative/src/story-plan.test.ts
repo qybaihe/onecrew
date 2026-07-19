@@ -2,6 +2,7 @@ import {
   creativeProjectBundleSchema,
   creativeStoryPlanRequestSchema,
   creativeStoryPlanSchema,
+  regionalCulturePackSchema,
   type CreativeProjectBundle,
 } from '@onecrew/contracts';
 import { describe, expect, it } from 'vitest';
@@ -87,5 +88,49 @@ describe('creative story planning', () => {
     });
     expect(() => materializeCreativeStoryPlan({ bundle, plan: broken, jobId: 'job_story_bad' }))
       .toThrow(CreativeStoryPlanValidationError);
+  });
+
+  it('omits the regional culture section when no pack is provided', () => {
+    const request = buildCreativeStoryPlanRequest({
+      bundle,
+      request: creativeStoryPlanRequestSchema.parse({ brief: '追加一集。', episodeCount: 1, generationNonce: 1 }),
+    });
+    expect(request.prompt).not.toContain('目标出海地区：');
+    expect(request.prompt).toContain('本次创作要求：追加一集。');
+  });
+
+  it('injects all eight regional culture lines and uses localizedBrief when a pack is provided', () => {
+    const culturePack = regionalCulturePackSchema.parse({
+      region: 'america',
+      regionLabel: '美国',
+      audienceProfile: 'ReelShort 中年女性',
+      themes: ['龙族奇幻浪漫', 'fated mate', '契约婚姻'],
+      spiritValues: ['命运翻转', '禁忌之恋', '女性自我主张'],
+      taboos: ['避免中式婆媳关系'],
+      hookStructures: ['开场 5 秒献祭', '每 60 秒一个反转'],
+      visualMotifs: ['月光', '龙穴', '红裙'],
+      referenceCases: [{ title: 'Claimed by the Dragon', whyItWorks: '龙族诅咒 + 命定伴侣' }],
+      localizedBrief: 'Cursed dragon king claims human bride before the full moon.',
+    });
+    const request = buildCreativeStoryPlanRequest({
+      bundle,
+      request: creativeStoryPlanRequestSchema.parse({
+        brief: '中文 brief 不应再被使用',
+        episodeCount: 1,
+        generationNonce: 1,
+        regionalCulturePackJobId: 'job_culture_1',
+      }),
+      culturePack,
+    });
+    expect(request.prompt).toContain('目标出海地区：美国');
+    expect(request.prompt).toContain('地区受众画像：ReelShort 中年女性');
+    expect(request.prompt).toContain('偏好题材：龙族奇幻浪漫、fated mate、契约婚姻');
+    expect(request.prompt).toContain('核心精神面貌：命运翻转、禁忌之恋、女性自我主张');
+    expect(request.prompt).toContain('禁忌规避：避免中式婆媳关系');
+    expect(request.prompt).toContain('钩子结构：开场 5 秒献祭、每 60 秒一个反转');
+    expect(request.prompt).toContain('视觉符号：月光、龙穴、红裙');
+    expect(request.prompt).toContain('Claimed by the Dragon——龙族诅咒 + 命定伴侣');
+    expect(request.prompt).toContain('本次创作要求（已按地域文化包本土化）：Cursed dragon king claims human bride before the full moon.');
+    expect(request.prompt).not.toContain('本次创作要求：中文 brief 不应再被使用');
   });
 });
