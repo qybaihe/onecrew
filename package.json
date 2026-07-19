@@ -37,6 +37,7 @@
     "remotion:pipeline-smoke": "pnpm --filter @onecrew/remotion render:pipeline-smoke",
     "remotion:real-project-e2e": "pnpm --filter @onecrew/remotion render:real-project-e2e",
     "demo:mock-e2e": "pnpm --filter @onecrew/remotion render:stage8-e2e",
+    "landing:deploy:edgeone": "pnpm --filter @onecrew/landing build:edgeone && npx -y edgeone@1.6.14 makers deploy apps/landing/dist -n onecrew-landing -e production -a global",
     "preview:dev": "pnpm --filter @onecrew/preview dev",
     "start:api": "pnpm --filter @onecrew/api start",
     "start:worker": "pnpm --filter @onecrew/worker start"

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "build:edgeone": "tsc -p tsconfig.json --noEmit && vite build --base ./",
     "dev": "vite --host 127.0.0.1",
     "lint": "eslint src *.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
