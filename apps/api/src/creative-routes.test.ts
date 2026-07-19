@@ -7,10 +7,12 @@ import {
   type CreativeWorkflowGroup,
   type ProviderRequest,
   type QcRunRequest,
+  type RegionalCulturePackRequest,
   creativeGenerationBatchSchema,
   creativeStoryPlanSchema,
   creativeWorkflowGroupSchema,
   episodeSpecSchema,
+  regionalCulturePackSchema,
   sceneSpecSchema,
   shotSpecSchema,
 } from '@onecrew/contracts';
@@ -880,6 +882,121 @@ describe('creative routes', () => {
       method: 'POST',
       url: '/v1/creative/imports/local-mini-drama/json',
       payload: { project: projectFile },
+    });
+    expect(response.statusCode).toBe(503);
+    await app.close();
+  });
+
+  it('exposes regional culture pack endpoints with idempotency and preview', async () => {
+    const projectId = 'prj_api_culture';
+    const jobId = 'job_api_culture';
+    const now = new Date().toISOString();
+    const culturePack = regionalCulturePackSchema.parse({
+      region: 'america',
+      regionLabel: '美国',
+      audienceProfile: 'ReelShort 中年女性',
+      themes: ['龙族奇幻浪漫', 'fated mate', '契约婚姻'],
+      spiritValues: ['命运翻转', '禁忌之恋', '女性自我主张'],
+      taboos: ['避免中式婆媳关系'],
+      hookStructures: ['开场 5 秒献祭', '每 60 秒一个反转'],
+      visualMotifs: ['月光', '龙穴', '红裙'],
+      referenceCases: [{ title: 'Claimed by the Dragon', whyItWorks: '龙族诅咒 + 命定伴侣' }],
+      localizedBrief: 'Cursed dragon king claims human bride before the full moon.',
+    });
+    let capturedRequest: RegionalCulturePackRequest | undefined;
+    let capturedKey: string | undefined;
+    const app = createApp({
+      logger: false,
+      probes: [],
+      creatives: {
+        regionalCulturePlanner: {
+          async submit(id, request, idempotencyKey) {
+            if (id !== projectId) throw new Error('wrong project');
+            capturedRequest = request;
+            capturedKey = idempotencyKey;
+            return {
+              jobId,
+              status: 'queued',
+              mode: 'mock',
+              provider: 'mock-llm-primary',
+              route: 'primary',
+              estimatedCostCny: 0.01,
+              statusUrl: `/v1/jobs/${jobId}`,
+              replayed: false,
+            };
+          },
+          async preview(id, requestedJobId) {
+            if (id !== projectId || requestedJobId !== jobId) throw new Error('wrong culture pack job');
+            return {
+              job: {
+                jobId: requestedJobId,
+                projectId,
+                capability: 'llm',
+                provider: 'mock-llm-primary',
+                model: 'deterministic-v1',
+                mode: 'mock',
+                status: 'succeeded',
+                attempt: 1,
+                inputHash: '7'.repeat(64),
+                outputAssetIds: [],
+                createdAt: now,
+                updatedAt: now,
+              },
+              pack: culturePack,
+            };
+          },
+        },
+      },
+    });
+
+    const missingKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/regional-culture-packs`,
+      payload: { region: 'america', brief: '为美国市场重写本项目。', generationNonce: 1 },
+    });
+    expect(missingKey.statusCode).toBe(400);
+
+    const submission = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/regional-culture-packs`,
+      headers: { 'idempotency-key': 'regional_culture_1' },
+      payload: { region: 'america', brief: '为美国市场重写本项目。', generationNonce: 1 },
+    });
+    expect(submission.statusCode).toBe(202);
+    expect(submission.json()).toMatchObject({
+      job_id: jobId,
+      status: 'queued',
+      provider: 'mock-llm-primary',
+      status_url: `/v1/jobs/${jobId}`,
+    });
+    expect(capturedRequest).toMatchObject({ region: 'america', brief: '为美国市场重写本项目。' });
+    expect(capturedKey).toBe('regional_culture_1');
+
+    const preview = await app.inject({
+      method: 'GET',
+      url: `/v1/creative/projects/${projectId}/regional-culture-packs/${jobId}`,
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({
+      job: { status: 'succeeded' },
+      pack: { region: 'america', regionLabel: '美国' },
+    });
+
+    const notFound = await app.inject({
+      method: 'GET',
+      url: `/v1/creative/projects/${projectId}/regional-culture-packs/job_unknown`,
+    });
+    expect(notFound.statusCode).toBe(500);
+    await app.close();
+  });
+
+  it('returns 503 when regional culture planner is not wired', async () => {
+    const app = createApp({ logger: false, probes: [], creatives: {} });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/creative/projects/prj_x/regional-culture-packs',
+      headers: { 'idempotency-key': 'k' },
+      payload: { region: 'america', brief: 'b', generationNonce: 1 },
     });
     expect(response.statusCode).toBe(503);
     await app.close();
