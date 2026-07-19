@@ -66,7 +66,7 @@ describe('CreativeStoryPlanner', () => {
             }, version: 3 },
             run: { jobId: 'job_story_flow', route: 'primary', request: {
               capability: 'llm', projectId: 'prj_story_flow', operation: 'script', prompt: '必须输出 1 集', locale: 'zh-CN',
-              imageUris: [], outputSchema: { title: 'OneCrewCreativeStoryPlan' }, maxOutputTokens: 4000, route: 'primary',
+              imageUris: [], outputSchema: { title: 'OneCrewCreativeStoryPlan' }, maxOutputTokens: 8000, route: 'primary',
             } },
             output: { text: JSON.stringify(plan), structured: plan },
           };

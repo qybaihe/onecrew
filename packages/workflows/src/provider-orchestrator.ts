@@ -34,6 +34,23 @@ function createJobId(inputHash: string): string {
   return `job_${Date.now().toString(36)}_${inputHash.slice(0, 16)}`;
 }
 
+export function assertProviderExecutionMatchesJob(
+  job: Pick<JobRecord, 'provider' | 'model' | 'mode'>,
+  descriptor: { name: string; model: string; mode: JobRecord['mode'] },
+): void {
+  if (
+    descriptor.name !== job.provider
+    || descriptor.model !== job.model
+    || descriptor.mode !== job.mode
+  ) {
+    throw new ProviderError(
+      'PROVIDER_ROUTE_MISMATCH',
+      `Job expects ${job.provider}/${job.model}/${job.mode}, but Worker executed ${descriptor.name}/${descriptor.model}/${descriptor.mode}`,
+      false,
+    );
+  }
+}
+
 export class ProviderSubmissionInProgressError extends Error {
   constructor(readonly idempotencyKey: string) {
     super(`Provider submission is already in progress: ${idempotencyKey}`);
@@ -193,6 +210,7 @@ export class ProviderOrchestrator {
       if (result.state.status !== 'succeeded' || result.state.output === undefined) {
         throw new ProviderError('PROVIDER_NOT_SUCCEEDED', `Provider ended as ${result.state.status}`, false);
       }
+      assertProviderExecutionMatchesJob(running.value, result.descriptor);
       const actualCostCny = result.state.actualCostCny ?? result.estimatedCostCny;
       const outputAssetIds = await persistProviderAssets(
         this.repositories,

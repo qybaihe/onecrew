@@ -42,6 +42,8 @@ describe('buildRegionalCultureRequest', () => {
       }),
     });
     expect(request.prompt).toContain('Claimed by the Dragon');
+    expect(request.prompt).toContain('平台归属与热度待市场团队核验');
+    expect(request.prompt).toContain('不得把“爆款”或平台归属写成已验证事实');
     expect(request.prompt).toContain('中年女性');
     expect(request.prompt).toContain('fated mate');
   });

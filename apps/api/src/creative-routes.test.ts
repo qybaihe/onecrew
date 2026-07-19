@@ -1,5 +1,6 @@
 import {
   assetRecordSchema,
+  type BudgetAllocationRequest,
   type CreativeGenerationBatchRequest,
   type CreativeProjectBundle,
   type CreativeReferenceGridRequest,
@@ -1024,6 +1025,101 @@ describe('creative routes', () => {
       payload: { region: 'america', brief: 'b', generationNonce: 1 },
     });
     expect(response.statusCode).toBe(503);
+    await app.close();
+  });
+
+  it('exposes budget allocation Agent endpoints with validated inputs and idempotency', async () => {
+    const projectId = 'prj_api_budget';
+    const jobId = 'job_api_budget';
+    const now = new Date().toISOString();
+    let capturedRequest: BudgetAllocationRequest | undefined;
+    let capturedKey: string | undefined;
+    const app = createApp({
+      logger: false,
+      probes: [],
+      creatives: {
+        repository: {
+          async importBundle() { throw new Error('not used'); },
+          async getBundle() { throw new Error('not used'); },
+          async getRecordVersions() { throw new Error('not used'); },
+          async listProjects() { throw new Error('not used'); },
+          async listAssets() { throw new Error('not used'); },
+          async updateEntity() { throw new Error('not used'); },
+          async updateEpisode() { throw new Error('not used'); },
+          async updateShot() { throw new Error('not used'); },
+        },
+        budgetAllocationPlanner: {
+          async submit(id, request, idempotencyKey) {
+            if (id !== projectId) throw new Error('wrong project');
+            capturedRequest = request;
+            capturedKey = idempotencyKey;
+            return {
+              jobId,
+              status: 'queued',
+              mode: 'mock',
+              provider: 'mock-llm-primary',
+              route: 'primary',
+              estimatedCostCny: 0.02,
+              statusUrl: `/v1/jobs/${jobId}`,
+              replayed: false,
+            };
+          },
+          async preview(id, requestedJobId) {
+            if (id !== projectId || requestedJobId !== jobId) throw new Error('wrong budget job');
+            return {
+              job: {
+                jobId,
+                projectId,
+                capability: 'plan',
+                provider: 'mock-llm-primary',
+                model: 'deterministic-v1',
+                mode: 'mock',
+                status: 'queued',
+                attempt: 0,
+                inputHash: '8'.repeat(64),
+                outputAssetIds: [],
+                createdAt: now,
+                updatedAt: now,
+              },
+            };
+          },
+        },
+      },
+    });
+
+    const missingKey = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/budget-allocation-plans`,
+      payload: { totalBudgetCny: 1_000_000, brief: '北美一人剧组', generationNonce: 1 },
+    });
+    expect(missingKey.statusCode).toBe(400);
+
+    const submission = await app.inject({
+      method: 'POST',
+      url: `/v1/creative/projects/${projectId}/budget-allocation-plans`,
+      headers: { 'idempotency-key': 'budget_plan_1' },
+      payload: {
+        market: 'north_america',
+        totalBudgetCny: 1_000_000,
+        horizonWeeks: 12,
+        distributionModel: 'owned_app',
+        monetizationModel: 'hybrid',
+        riskTolerance: 'balanced',
+        brief: '给定爆款 IP 和 OneCrew，先验证北美市场再放量。',
+        generationNonce: 1,
+      },
+    });
+    expect(submission.statusCode).toBe(202);
+    expect(submission.json()).toMatchObject({ job_id: jobId, status: 'queued' });
+    expect(capturedRequest).toMatchObject({ totalBudgetCny: 1_000_000, horizonWeeks: 12 });
+    expect(capturedKey).toBe('budget_plan_1');
+
+    const preview = await app.inject({
+      method: 'GET',
+      url: `/v1/creative/projects/${projectId}/budget-allocation-plans/${jobId}`,
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json()).toMatchObject({ job: { jobId, status: 'queued' } });
     await app.close();
   });
 });

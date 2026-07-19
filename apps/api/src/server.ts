@@ -14,16 +14,17 @@ import {
   BullProviderQueue,
   BullQcQueue,
   BullRenderQueue,
+  BudgetAllocationPlanner,
   CreativeGenerationBatchOrchestrator,
   CreativeReferenceGridProcessor,
   CreativeStoryPlanner,
   LocalizationOrchestrator,
-  RegionalCulturePlanner,
   ProductionWorkflow,
   PublishOrchestrator,
   ProviderCallbackProcessor,
   ProviderOrchestrator,
   QcOrchestrator,
+  RegionalCulturePlanner,
   RenderOrchestrator,
 } from '@onecrew/workflows';
 
@@ -73,6 +74,7 @@ const creativeGenerationBatchOrchestrator = new CreativeGenerationBatchOrchestra
 );
 const creativeStoryPlanner = new CreativeStoryPlanner(repositories.creative, providerOrchestrator);
 const regionalCulturePlanner = new RegionalCulturePlanner(repositories.creative, providerOrchestrator);
+const budgetAllocationPlanner = new BudgetAllocationPlanner(repositories.creative, providerOrchestrator);
 const creativeReferenceGridProcessor = new CreativeReferenceGridProcessor(
   repositories.creative,
   repositories.assets,
@@ -262,6 +264,7 @@ const app = createApp({
     continuityQc: qcOrchestrator,
     storyPlanner: creativeStoryPlanner,
     regionalCulturePlanner,
+    budgetAllocationPlanner,
     referenceGrid: creativeReferenceGridProcessor,
     reusableAssets: repositories.creative,
     workflowGroups: repositories.creativeWorkflowGroups,
@@ -284,6 +287,16 @@ const app = createApp({
   publishes: { orchestrator: publishOrchestrator },
   renders: { orchestrator: renderOrchestrator },
   qc: { orchestrator: qcOrchestrator },
+  workbench: {
+    jobs: repositories.jobs,
+    batches: repositories.creativeGenerationBatches,
+    qcRuns: repositories.qcRuns,
+    renders: repositories.renders,
+    localizations: repositories.localizationRuns,
+    publishes: repositories.publishes,
+    humanGates: repositories.humanGates,
+    audit: repositories.audit,
+  },
 });
 app.addHook('onClose', async () => {
   await productionWorkflow.close();

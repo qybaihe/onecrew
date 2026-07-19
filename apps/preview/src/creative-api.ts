@@ -1,5 +1,7 @@
 import type {
   AssetRecord,
+  BudgetAllocationPlan,
+  BudgetAllocationRequest,
   CreativeEntity,
   CreativeGenerationBatch,
   CreativeProjectBundle,
@@ -14,6 +16,8 @@ import type {
   ProjectSpec,
   ProviderMode,
   QcRunRecord,
+  RegionalCulturePack,
+  RegionalCulturePackRegion,
   ShotSpec,
 } from '@onecrew/contracts';
 
@@ -69,6 +73,20 @@ export type CreativeStoryPlanAccepted = CreativeGenerationAccepted;
 export interface CreativeStoryPlanPreview {
   job: JobRecord;
   plan?: CreativeStoryPlan;
+}
+
+export type RegionalCulturePackAccepted = CreativeGenerationAccepted;
+
+export interface RegionalCulturePackPreview {
+  job: JobRecord;
+  pack?: RegionalCulturePack;
+}
+
+export type BudgetAllocationPlanAccepted = CreativeGenerationAccepted;
+
+export interface BudgetAllocationPlanPreview {
+  job: JobRecord;
+  plan?: BudgetAllocationPlan;
 }
 
 export interface CreativeStoryPlanApplyResponse {
@@ -218,6 +236,7 @@ export async function submitCreativeStoryPlan(
   projectId: string,
   brief: string,
   episodeCount: number,
+  regionalCulturePackJobId?: string,
 ): Promise<CreativeStoryPlanAccepted> {
   const response = await request(`/v1/creative/projects/${encodeURIComponent(projectId)}/story-plans`, {
     method: 'POST',
@@ -225,9 +244,76 @@ export async function submitCreativeStoryPlan(
       'content-type': 'application/json',
       'idempotency-key': `studio_story_plan_${crypto.randomUUID()}`,
     },
-    body: JSON.stringify({ brief, episodeCount, route: 'primary', generationNonce: Date.now() }),
+    body: JSON.stringify({
+      brief,
+      episodeCount,
+      route: 'primary',
+      generationNonce: Date.now(),
+      ...(regionalCulturePackJobId ? { regionalCulturePackJobId } : {}),
+    }),
   });
   return json<CreativeStoryPlanAccepted>(response);
+}
+
+export async function submitRegionalCulturePack(
+  projectId: string,
+  region: RegionalCulturePackRegion,
+  brief: string,
+): Promise<RegionalCulturePackAccepted> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/regional-culture-packs`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `regional_culture_ui_${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({ region, brief, route: 'primary', generationNonce: Date.now() }),
+    },
+  );
+  return json<RegionalCulturePackAccepted>(response);
+}
+
+export async function getRegionalCulturePack(
+  projectId: string,
+  jobId: string,
+): Promise<RegionalCulturePackPreview> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/regional-culture-packs/${encodeURIComponent(jobId)}`,
+  );
+  return json<RegionalCulturePackPreview>(response);
+}
+
+export async function submitBudgetAllocationPlan(
+  projectId: string,
+  input: Omit<BudgetAllocationRequest, 'route' | 'generationNonce'>,
+): Promise<BudgetAllocationPlanAccepted> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/budget-allocation-plans`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `budget_allocation_ui_${crypto.randomUUID()}`,
+      },
+      body: JSON.stringify({
+        ...input,
+        route: 'primary',
+        generationNonce: Date.now(),
+      }),
+    },
+  );
+  return json<BudgetAllocationPlanAccepted>(response);
+}
+
+export async function getBudgetAllocationPlan(
+  projectId: string,
+  jobId: string,
+): Promise<BudgetAllocationPlanPreview> {
+  const response = await request(
+    `/v1/creative/projects/${encodeURIComponent(projectId)}/budget-allocation-plans/${encodeURIComponent(jobId)}`,
+  );
+  return json<BudgetAllocationPlanPreview>(response);
 }
 
 export async function getCreativeStoryPlan(

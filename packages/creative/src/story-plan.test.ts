@@ -55,9 +55,16 @@ describe('creative story planning', () => {
       bundle,
       request: creativeStoryPlanRequestSchema.parse({ brief: '追加一集，强化悬念。', episodeCount: 1, generationNonce: 3 }),
     });
-    expect(request).toMatchObject({ capability: 'llm', operation: 'script', projectId: 'prj_story', locale: 'zh-CN' });
+    expect(request).toMatchObject({
+      capability: 'llm',
+      operation: 'script',
+      projectId: 'prj_story',
+      locale: 'zh-CN',
+      maxOutputTokens: 8_000,
+    });
     expect(request.prompt).toContain('现有剧集');
     expect(request.prompt).toContain('追加一集');
+    expect(request.prompt).toContain('800–1600 个汉字');
     expect(request.outputSchema).toMatchObject({ title: 'OneCrewCreativeStoryPlan', type: 'object' });
   });
 

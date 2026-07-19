@@ -12,6 +12,7 @@ import {
   materializeOneCrewArchive,
 } from '@onecrew/creative';
 import {
+  budgetAllocationRequestSchema,
   characterSpecSchema,
   creativeGenerationBatchRequestSchema,
   creativeReferenceGridRequestSchema,
@@ -39,10 +40,13 @@ import {
 import { createInputHash, VersionConflictError } from '@onecrew/domain';
 import { InvalidImageGridError, type S3MediaStore } from '@onecrew/media';
 import {
+  BudgetAllocationPlanNotReadyError,
+  BudgetAllocationPlannerOutputError,
   CreativeGenerationBatchValidationError,
   CreativeReferenceGridSourceError,
   CreativeStoryPlanNotReadyError,
   CreativeStoryPlanOutputError,
+  type BudgetAllocationPlanner,
   type CreativeStoryPlanner,
   ProviderSubmissionInProgressError,
   RegionalCulturePackNotReadyError,
@@ -75,6 +79,7 @@ export interface CreativeRouteOptions {
   continuityQc?: Pick<QcOrchestrator, 'submit'>;
   storyPlanner?: Pick<CreativeStoryPlanner, 'submit' | 'preview' | 'apply'>;
   regionalCulturePlanner?: Pick<RegionalCulturePlanner, 'submit' | 'preview'>;
+  budgetAllocationPlanner?: Pick<BudgetAllocationPlanner, 'submit' | 'preview'>;
   referenceGrid?: Pick<CreativeReferenceGridProcessor, 'process'>;
   reusableAssets?: Pick<CreativeRepository, 'searchReusableAssets' | 'reuseAsset'>;
   workflowGroups?: Pick<
@@ -311,6 +316,46 @@ export function registerCreativeRoutes(app: FastifyInstance, options?: CreativeR
     try {
       const { projectId, jobId } = request.params as { projectId: string; jobId: string };
       return await options.regionalCulturePlanner.preview(projectId, jobId);
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.post('/v1/creative/projects/:projectId/budget-allocation-plans', async (request, reply) => {
+    if (!options?.budgetAllocationPlanner)
+      return creativeError(reply, new BudgetAllocationPlannerNotConfiguredError());
+    try {
+      const idempotencyKey = firstHeader(request.headers['idempotency-key']);
+      if (!idempotencyKey?.trim()) throw new MissingBudgetAllocationPlanIdempotencyKeyError();
+      const { projectId } = request.params as { projectId: string };
+      const accepted = await options.budgetAllocationPlanner.submit(
+        projectId,
+        budgetAllocationRequestSchema.parse(request.body),
+        idempotencyKey,
+      );
+      reply.code(202);
+      return {
+        job_id: accepted.jobId,
+        status: accepted.status,
+        mode: accepted.mode,
+        provider: accepted.provider,
+        route: accepted.route,
+        estimated_cost_cny: accepted.estimatedCostCny,
+        status_url: accepted.statusUrl,
+        replayed: accepted.replayed,
+        ...(accepted.warning ? { warning: accepted.warning } : {}),
+      };
+    } catch (error) {
+      return creativeError(reply, error);
+    }
+  });
+
+  app.get('/v1/creative/projects/:projectId/budget-allocation-plans/:jobId', async (request, reply) => {
+    if (!options?.budgetAllocationPlanner)
+      return creativeError(reply, new BudgetAllocationPlannerNotConfiguredError());
+    try {
+      const { projectId, jobId } = request.params as { projectId: string; jobId: string };
+      return await options.budgetAllocationPlanner.preview(projectId, jobId);
     } catch (error) {
       return creativeError(reply, error);
     }
@@ -779,10 +824,24 @@ export class RegionalCulturePlannerNotConfiguredError extends Error {
   }
 }
 
+export class BudgetAllocationPlannerNotConfiguredError extends Error {
+  constructor() {
+    super('Budget allocation planner is not configured');
+    this.name = 'BudgetAllocationPlannerNotConfiguredError';
+  }
+}
+
 export class MissingRegionalCulturePackIdempotencyKeyError extends Error {
   constructor() {
     super('Idempotency-Key header is required for regional culture pack generation');
     this.name = 'MissingRegionalCulturePackIdempotencyKeyError';
+  }
+}
+
+export class MissingBudgetAllocationPlanIdempotencyKeyError extends Error {
+  constructor() {
+    super('Idempotency-Key header is required for budget allocation planning');
+    this.name = 'MissingBudgetAllocationPlanIdempotencyKeyError';
   }
 }
 
@@ -866,6 +925,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeContinuityQcNotConfiguredError ||
     error instanceof CreativeStoryPlannerNotConfiguredError ||
     error instanceof RegionalCulturePlannerNotConfiguredError ||
+    error instanceof BudgetAllocationPlannerNotConfiguredError ||
     error instanceof CreativeReferenceGridNotConfiguredError ||
     error instanceof CreativeReusableAssetsNotConfiguredError ||
     error instanceof CreativeWorkflowGroupsNotConfiguredError
@@ -876,7 +936,8 @@ function creativeError(reply: FastifyReply, error: unknown) {
   } else if (
     error instanceof VersionConflictError ||
     error instanceof CreativeStoryPlanNotReadyError ||
-    error instanceof RegionalCulturePackNotReadyError
+    error instanceof RegionalCulturePackNotReadyError ||
+    error instanceof BudgetAllocationPlanNotReadyError
   ) {
     reply.code(409);
   } else if (error instanceof IdempotencyConflictError || error instanceof ProviderSubmissionInProgressError) {
@@ -891,6 +952,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof MissingCreativeContinuityQcIdempotencyKeyError ||
     error instanceof MissingCreativeStoryPlanIdempotencyKeyError ||
     error instanceof MissingRegionalCulturePackIdempotencyKeyError ||
+    error instanceof MissingBudgetAllocationPlanIdempotencyKeyError ||
     error instanceof MissingCreativeReferenceGridIdempotencyKeyError ||
     error instanceof MissingCreativeReusableAssetIdempotencyKeyError ||
     error instanceof MissingCreativeWorkflowGroupIdempotencyKeyError ||
@@ -903,6 +965,7 @@ function creativeError(reply: FastifyReply, error: unknown) {
     error instanceof CreativeStoryPlanOutputError ||
     error instanceof CreativeStoryPlanValidationError ||
     error instanceof RegionalCulturePlannerOutputError ||
+    error instanceof BudgetAllocationPlannerOutputError ||
     error instanceof InvalidCreativeArchiveError ||
     /LocalMiniDrama|Archive|project\.json|declared media file|archive root|absolute path/i.test(message)
   ) {

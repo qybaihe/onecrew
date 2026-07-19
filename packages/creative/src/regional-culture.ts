@@ -26,7 +26,7 @@ const REGION_GUIDES: Record<RegionalCulturePackRequest['region'], string> = {
     '钩子结构：开场 5 秒必须出现高冲突画面（献祭、追逐、变身、婚礼打断）；每 60 秒一个反转；每集结尾必须是命运级悬念。',
     '视觉符号：月光、中世纪城堡与龙穴、现代豪宅、男主深邃眼神特写、女主红裙、满月、誓约戒指、魔法印记。',
     '禁忌规避：避免东亚家族伦理戏、避免婆媳关系主线、避免修仙渡劫设定、避免中式婚礼符号。',
-    '参考案例：ReelShort 2026 爆款《Claimed by the Dragon》——龙族诅咒 + 命定伴侣 + 美国中年女性受众 + 每集结尾 cliffhanger，证明"西方奇幻浪漫 + 命运绑定"在美国市场的爆发力。',
+    '创作参考：《Claimed by the Dragon》（平台归属与热度待市场团队核验）——可借鉴龙族诅咒、命定伴侣与集尾 cliffhanger；仅作题材和结构参照，不得把“爆款”或平台归属写成已验证事实。',
   ].join('\n'),
   russia: [
     '目标地区：俄罗斯（russia）。受众偏好强情节、家庭荣誉、男性英雄主义与民族叙事。',
@@ -57,7 +57,7 @@ export function buildRegionalCultureRequest(input: BuildRegionalCultureRequestIn
     'localizedBrief 必须是把项目简介用该地区受众熟悉的题材、精神面貌和视觉符号彻底重写后的创作简报，而不是字面翻译。',
     'themes、spiritValues、hookStructures、visualMotifs 必须具体、可被编剧直接执行，避免空泛词汇。',
     'taboos 必须列出该地区受众会立即弃剧的文化雷区。',
-    'referenceCases 至少给出 1 个真实出海爆款短剧或该地区本土成功剧集，并说明其成功要素如何映射到本项目。',
+    'referenceCases 至少给出 1 个出海短剧或该地区本土剧集，并说明其创作要素如何映射到本项目；无法核验平台归属或热度时必须明确标注“待核验”，不得编造播放量、排名或爆款结论。',
     `项目：${project.nameZh} / ${project.nameEn}`,
     `项目简介：${project.synopsis}`,
     `原受众：${project.audience}`,

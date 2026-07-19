@@ -3,6 +3,7 @@ export * from './creative-generation-batch-orchestrator.js';
 export * from './creative-reference-grid.js';
 export * from './creative-story-planner.js';
 export * from './regional-culture-planner.js';
+export * from './budget-allocation-planner.js';
 export * from './provider-assets.js';
 export * from './provider-orchestrator.js';
 export * from './provider-queue.js';

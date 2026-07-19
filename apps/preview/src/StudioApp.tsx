@@ -61,6 +61,19 @@ type ContinuityQcStatus = 'idle' | 'submitting' | QcRunRecord['status'];
 type StoryPlanStatus = 'idle' | 'submitting' | 'applying' | 'applied' | JobStatus;
 type ReferenceGridStatus = 'idle' | 'processing' | 'done';
 type ReusableAssetStatus = 'idle' | 'searching' | 'reusing';
+export type StudioFocus =
+  | 'story-plan'
+  | 'story-plan-confirm'
+  | 'script-editor'
+  | 'shot-canvas'
+  | 'shot-detail'
+  | 'shot-generate'
+  | 'shot-batches'
+  | 'asset-character'
+  | 'asset-scene'
+  | 'asset-prop'
+  | 'asset-split'
+  | 'asset-search';
 
 interface GenerationState {
   status: GenerationStatus;
@@ -183,6 +196,10 @@ function entityDraft(entity: CreativeEntity | undefined): EntityDraft {
 
 export interface StudioAppProps {
   onOpenReview(): void;
+  initialProjectId?: string;
+  embedded?: boolean;
+  focus?: StudioFocus;
+  onProjectChange?(projectId: string): void;
 }
 
 const entityLabels: Record<CreativeEntity['kind'], string> = {
@@ -270,9 +287,9 @@ function flowGraph(shots: ShotSpec[], selectedShotId: string | undefined): { nod
   return { nodes, edges };
 }
 
-export function StudioApp({ onOpenReview }: StudioAppProps) {
+export function StudioApp({ onOpenReview, initialProjectId, embedded = false, focus, onProjectChange }: StudioAppProps) {
   const [projects, setProjects] = useState<ProjectSpec[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>();
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(initialProjectId);
   const [project, setProject] = useState<CreativeProjectResponse>();
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string>();
   const [selectedShotId, setSelectedShotId] = useState<string>();
@@ -311,13 +328,16 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const [reusingAssetId, setReusingAssetId] = useState('');
   const [error, setError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
+  const studioRoot = useRef<HTMLDivElement>(null);
   const generationSelectionRef = useRef('');
   const projectSelectionRef = useRef('');
 
   const refreshProjects = async (preferredId?: string) => {
     const result = await listCreativeProjects();
     setProjects(result);
-    setSelectedProjectId(preferredId ?? selectedProjectId ?? result[0]?.projectId);
+    const nextProjectId = preferredId ?? selectedProjectId ?? result[0]?.projectId;
+    setSelectedProjectId(nextProjectId);
+    if (nextProjectId) onProjectChange?.(nextProjectId);
   };
 
   useEffect(() => {
@@ -326,6 +346,53 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (initialProjectId && initialProjectId !== selectedProjectId) setSelectedProjectId(initialProjectId);
+  }, [initialProjectId]);
+
+  useEffect(() => {
+    if (!focus) return;
+    if (focus === 'shot-canvas') setView('canvas');
+    else setView('storyboards');
+
+    const kind = focus === 'asset-character'
+      ? 'character'
+      : focus === 'asset-scene'
+        ? 'scene'
+        : focus === 'asset-prop'
+          ? 'prop'
+          : undefined;
+    if (kind) {
+      const entityId = project?.bundle.entities.find((entity) => entity.kind === kind)?.entityId;
+      if (entityId) setSelectedEntityId(entityId);
+    }
+
+    const selectors: Record<StudioFocus, string> = {
+      'story-plan': '.story-planner',
+      'story-plan-confirm': '.story-planner',
+      'script-editor': '.episode-editor',
+      'shot-canvas': '.flow-canvas',
+      'shot-detail': '.shot-inspector',
+      'shot-generate': '.shot-generation',
+      'shot-batches': '.workflow-groups',
+      'asset-character': '.entity-group[data-kind="character"]',
+      'asset-scene': '.entity-group[data-kind="scene"]',
+      'asset-prop': '.entity-group[data-kind="prop"]',
+      'asset-split': '.reference-grid-tool',
+      'asset-search': '.reusable-asset-tool',
+    };
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        studioRoot.current?.querySelector(selectors[focus])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [focus, project?.bundle.project.projectId]);
 
   useEffect(() => {
     projectSelectionRef.current = selectedProjectId ?? '';
@@ -1083,9 +1150,9 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
   const batchMutating = ['submitting', 'stopping', 'retrying'].includes(batchAction);
 
   return (
-    <div className="studio-shell">
-      <header className="studio-topbar">
-        <a className="brand" href="#studio" aria-label="OneCrew 创作台首页">
+    <div ref={studioRoot} className={embedded ? 'studio-shell embedded' : 'studio-shell'}>
+      {!embedded && <header className="studio-topbar">
+        <a className="brand" href="#/studio" aria-label="OneCrew 创作台首页">
           <span className="brand-mark" aria-hidden="true">✦</span>
           <span><strong>ONECREW</strong><small>CREATIVE STUDIO</small></span>
         </a>
@@ -1094,7 +1161,11 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
           <select
             id="project-select"
             value={selectedProjectId ?? ''}
-            onChange={(event) => setSelectedProjectId(event.target.value || undefined)}
+            onChange={(event) => {
+              const projectId = event.target.value || undefined;
+              setSelectedProjectId(projectId);
+              if (projectId) onProjectChange?.(projectId);
+            }}
           >
             {projects.length === 0 && <option value="">暂无创作工程</option>}
             {projects.map((item) => <option key={item.projectId} value={item.projectId}>{item.nameZh}</option>)}
@@ -1122,7 +1193,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
           </button>
           <button className="studio-button ghost" type="button" onClick={onOpenReview}>打开审片</button>
         </div>
-      </header>
+      </header>}
 
       {error && <div className="studio-alert" role="alert"><strong>操作失败</strong><span>{error}</span></div>}
 
@@ -1651,7 +1722,7 @@ export function StudioApp({ onOpenReview }: StudioAppProps) {
             {(['character', 'scene', 'prop'] as const).map((kind) => {
               const items = entities.filter((entity) => entity.kind === kind);
               return (
-                <section key={kind} className="entity-group">
+                <section key={kind} className="entity-group" data-kind={kind}>
                   <h3>{entityLabels[kind]} <span>{items.length}</span></h3>
                   {items.map((entity) => (
                     <button

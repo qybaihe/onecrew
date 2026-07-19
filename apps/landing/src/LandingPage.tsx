@@ -221,24 +221,6 @@ function HomePage() {
               <TeamCard key={member.slug} member={member} />
             ))}
           </div>
-
-          <div className="team-manifesto mt-4 grid gap-8 rounded-[2rem] p-7 sm:p-10 lg:grid-cols-[1fr_1.25fr] lg:items-center">
-            <p className="font-display text-3xl leading-tight tracking-[-0.025em] sm:text-5xl">
-              不是三份简历的并排，<br />而是一条完整航线。
-            </p>
-            <div className="grid gap-5 sm:grid-cols-3">
-              {[
-                ['01', '把故事组织成可执行的生产系统'],
-                ['02', '把模型锻造成稳定可信的镜头'],
-                ['03', '把内容送到真正会回应的市场'],
-              ].map(([number, text]) => (
-                <div key={number} className="border-l border-black/10 pl-4">
-                  <span className="text-[0.65rem] font-semibold tracking-[0.18em] text-[#6f6f6f]">{number}</span>
-                  <p className="mt-2 text-sm leading-6 text-[#4f4f4f]">{text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </section>
 
@@ -247,11 +229,12 @@ function HomePage() {
   );
 }
 
-function MetricCard({ value, label }: { value: string; label: string }) {
+function MetricCard({ value, label, explanation }: { value: string; label: string; explanation: string }) {
   return (
-    <div className="metric-card rounded-3xl p-5 sm:p-6">
-      <p className="font-display text-4xl tracking-[-0.03em] sm:text-5xl">{value}</p>
-      <p className="mt-2 text-xs leading-5 text-[#6f6f6f]">{label}</p>
+    <div className="metric-card rounded-2xl p-4">
+      <p className="font-display metric-value text-2xl tracking-[-0.03em] sm:text-3xl">{value}</p>
+      <p className="mt-1.5 text-[0.7rem] font-medium leading-5 text-[#3f3f3f]">{label}</p>
+      <p className="mt-1.5 text-[0.68rem] leading-[1.6] text-[#6f6f6f]">{explanation}</p>
     </div>
   );
 }
@@ -265,113 +248,211 @@ function MemberPage({ member }: { member: TeamMember }) {
     };
   }, [member]);
 
+  const accentClass = `accent-${member.accent}`;
+
   return (
     <>
       <SiteHeader memberPage />
-      <main className="relative z-10 px-4 pb-20 pt-14 sm:px-6 sm:pb-28 sm:pt-20 lg:px-8">
+      <main className={`relative z-10 px-4 pb-16 pt-12 sm:px-6 sm:pb-20 sm:pt-16 lg:px-8 ${accentClass}`}>
         <div className="mx-auto max-w-7xl">
-          <a href="#team" className="inline-flex items-center gap-2 rounded-full text-sm text-[#5f5f5f] transition-colors hover:text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black">
-            <ArrowLeftIcon />
-            返回团队
-          </a>
+          {/* === Two-column: sticky identity sidebar (left) + main flow (right) === */}
+          <div className="grid gap-5 lg:grid-cols-[0.36fr_0.64fr] lg:gap-6">
 
-          <section className="member-hero mt-8 overflow-hidden rounded-[2.5rem] p-6 sm:p-10 lg:p-14">
-            <div className="grid gap-10 lg:grid-cols-[1.32fr_0.68fr] lg:items-end">
-              <div>
-                <div className="flex items-center gap-3 text-xs font-medium tracking-[0.18em] text-[#6f6f6f] uppercase">
-                  <span>{member.sequence}</span>
-                  <span className="h-px w-10 bg-black/15" />
-                  <span>{member.role}</span>
+            {/* --- LEFT: sticky identity card --- */}
+            <aside className="member-panel h-fit rounded-[1.75rem] p-5 sm:p-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+              <a
+                href="#team"
+                className="back-link inline-flex items-center gap-2 rounded-full text-xs text-[#5f5f5f] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+              >
+                <ArrowLeftIcon />
+                返回团队
+              </a>
+
+              <div className="accent-eyebrow mt-5 text-[0.65rem] font-medium tracking-[0.18em] uppercase">
+                <span>{member.sequence}</span>
+                <span className="h-px w-8 bg-black/15" />
+                <span>{member.role}</span>
+              </div>
+
+              <h1 className="font-display mt-3 text-5xl leading-[0.9] tracking-[-0.045em] sm:text-6xl">
+                {member.name}
+              </h1>
+              <p className="mt-2 text-[0.72rem] tracking-[0.06em] text-[#6f6f6f]">
+                {member.romanizedName} · {member.education}
+              </p>
+
+              <p className="font-display mt-4 text-base leading-snug italic text-[#3f3f3f]">
+                “{member.poeticRole}”
+              </p>
+
+              <div className="mt-5">
+                <p className="text-[0.6rem] font-semibold tracking-[0.18em] text-[#6f6f6f] uppercase">核心能力</p>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {member.focus.map((focus) => (
+                    <span
+                      key={focus}
+                      className="accent-chip rounded-full px-2.5 py-1 text-[0.64rem] font-medium"
+                    >
+                      {focus}
+                    </span>
+                  ))}
                 </div>
-                <h1 className="font-display mt-8 text-[4.4rem] leading-[0.83] tracking-[-0.055em] sm:text-[7.5rem] lg:text-[9.5rem]">
-                  {member.name}
-                </h1>
-                <p className="mt-5 text-sm tracking-[0.08em] text-[#6f6f6f]">{member.romanizedName} · {member.education}</p>
               </div>
-              <div className="member-seal ml-auto grid aspect-square w-full max-w-[18rem] place-items-center rounded-full p-8 text-center">
-                <span className="font-display text-3xl leading-tight italic text-[#3f3f3f]">{member.poeticRole}</span>
-              </div>
-            </div>
 
-            <div className="mt-14 grid gap-8 border-t border-black/10 pt-10 lg:grid-cols-[0.75fr_1.25fr]">
-              <p className="text-xs font-medium tracking-[0.18em] text-[#6f6f6f] uppercase">Role in OneCrew</p>
-              <p className="font-display max-w-4xl text-3xl leading-[1.12] tracking-[-0.02em] text-[#333] sm:text-5xl">{member.thesis}</p>
-            </div>
-          </section>
-
-          <section className="mt-5 grid gap-5 lg:grid-cols-[0.76fr_1.24fr]">
-            <aside className="member-panel h-fit rounded-[2rem] p-6 sm:p-8 lg:sticky lg:top-28">
-              <p className="text-xs font-medium tracking-[0.18em] text-[#6f6f6f] uppercase">关于 {member.name}</p>
-              <p className="mt-6 text-base leading-8 text-[#4f4f4f]">{member.introduction}</p>
-              <div className="mt-8 flex flex-wrap gap-2">
-                {member.focus.map((focus) => (
-                  <span key={focus} className="rounded-full border border-black/10 bg-white/40 px-3 py-2 text-[0.7rem] text-[#5f5f5f]">{focus}</span>
-                ))}
-              </div>
-              <div className="mt-9 grid grid-cols-3 gap-2">
-                {member.metrics.map((metric) => <MetricCard key={metric.value} {...metric} />)}
+              <div className="mt-6 border-t border-black/10 pt-4">
+                <p className="text-[0.6rem] font-semibold tracking-[0.18em] text-[#6f6f6f] uppercase">作品与代码</p>
+                <ul className="mt-3 space-y-2">
+                  {member.links.map((link) => (
+                    <li key={link.href}>
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group inline-flex w-full items-center justify-between gap-2 rounded-lg border border-black/8 bg-white/40 px-3 py-2 text-[0.74rem] text-[#2a2a2a] transition-colors hover:border-black/20 hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                      >
+                        <span className="min-w-0 truncate">{link.label}</span>
+                        <ArrowUpRightIcon />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </aside>
 
-            <div className="space-y-5">
-              <section className="member-panel rounded-[2rem] p-6 sm:p-9">
-                <div className="flex items-end justify-between gap-6">
-                  <div>
-                    <p className="text-xs font-medium tracking-[0.18em] text-[#6f6f6f] uppercase">Selected Experience</p>
-                    <h2 className="font-display mt-4 text-4xl tracking-[-0.03em] sm:text-5xl">与命题相关的精选履历</h2>
+            {/* --- RIGHT: main flow --- */}
+            <div className="min-w-0 space-y-4">
+
+              {/* 2) HERO / THESIS CALLOUT — compact */}
+              <section className="member-hero overflow-hidden rounded-[1.75rem] p-5 sm:p-7">
+                <p className="text-[0.65rem] font-medium tracking-[0.18em] uppercase" style={{ color: 'var(--accent-ink)' }}>
+                  Role in OneCrew · 剧组中的位置
+                </p>
+                <p className="font-display mt-3 max-w-3xl text-lg leading-[1.35] tracking-[-0.015em] text-[#1f1f1f] sm:text-xl">
+                  {member.thesis}
+                </p>
+              </section>
+
+              {/* 3) CAPABILITY OVERVIEW */}
+              <section className="member-panel rounded-[1.75rem] p-5 sm:p-6">
+                <p className="accent-eyebrow text-[0.65rem] font-medium tracking-[0.18em] uppercase">
+                  Capability Overview · 能力概览
+                </p>
+                <h2 className="font-display mt-3 text-2xl leading-tight tracking-[-0.025em] sm:text-3xl">
+                  关于 {member.name}
+                </h2>
+
+                <div className="mt-5 grid gap-5 sm:gap-6 lg:grid-cols-[1fr_1fr]">
+                  <div className="min-w-0">
+                    <p className="text-sm leading-[1.75] text-[#3f3f3f]">
+                      {member.introduction}
+                    </p>
                   </div>
-                  <span className="hidden font-display text-6xl text-black/10 sm:block">03</span>
+
+                  <div className="thesis-connection rounded-xl p-4 sm:p-5">
+                    <p className="text-[0.6rem] font-semibold tracking-[0.18em] uppercase" style={{ color: 'var(--accent-ink)' }}>
+                      与 OneCrew 命题的连接
+                    </p>
+                    <p className="mt-2 text-[0.8rem] leading-[1.75] text-[#2a2a2a]">
+                      {member.thesisConnection}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mt-10 divide-y divide-black/10 border-t border-black/10">
+                <div className="mt-6">
+                  <p className="text-[0.6rem] font-semibold tracking-[0.18em] text-[#6f6f6f] uppercase">
+                    Proof Metrics · 可验证的指标
+                  </p>
+                  <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+                    {member.metrics.map((metric) => (
+                      <MetricCard key={metric.value + metric.label} {...metric} />
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* 4) SELECTED EXPERIENCE */}
+              <section className="member-panel rounded-[1.75rem] p-5 sm:p-6">
+                <div className="flex items-end justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="accent-eyebrow text-[0.65rem] font-medium tracking-[0.18em] uppercase">
+                      Selected Experience · 精选履历
+                    </p>
+                    <h2 className="font-display mt-3 text-2xl leading-tight tracking-[-0.025em] sm:text-3xl">
+                      与命题相关的三段实战
+                    </h2>
+                  </div>
+                  <span className="hidden font-display text-4xl text-black/10 sm:block">03</span>
+                </div>
+
+                <div className="mt-6 divide-y divide-black/10 border-t border-black/10">
                   {member.experience.map((item, index) => (
-                    <article key={item.title} className="grid gap-5 py-8 sm:grid-cols-[4.5rem_1fr]">
-                      <span className="font-display text-3xl text-black/20">0{index + 1}</span>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                          <span className="text-[0.65rem] font-semibold tracking-[0.16em] text-[#6f6f6f] uppercase">{item.eyebrow}</span>
-                          <span className="text-xs text-[#8a8a8a]">{item.period}</span>
+                    <article key={item.title} className="experience-entry grid gap-4 py-5 sm:grid-cols-[3rem_1fr] sm:gap-5">
+                      <span className="font-display text-2xl text-black/20">0{index + 1}</span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="text-[0.6rem] font-semibold tracking-[0.16em] text-[#6f6f6f] uppercase">{item.eyebrow}</span>
+                          <span className="text-[0.68rem] text-[#8a8a8a]">{item.period}</span>
                         </div>
-                        <h3 className="font-display mt-3 text-3xl leading-tight tracking-[-0.02em] sm:text-4xl">{item.title}</h3>
-                        <p className="mt-4 text-sm leading-7 text-[#565656] sm:text-base sm:leading-8">{item.description}</p>
-                        {item.result ? <p className="mt-4 border-l-2 border-black pl-4 text-sm font-medium leading-6 text-[#343434]">{item.result}</p> : null}
+                        <h3 className="font-display mt-2 text-lg leading-tight tracking-[-0.015em] sm:text-xl">{item.title}</h3>
+
+                        <p className="mt-2.5 text-[0.76rem] font-medium leading-[1.65] text-[#3f3f3f]">
+                          <span className="text-[#6f6f6f]">职责 · </span>{item.responsibility}
+                        </p>
+
+                        <p className="mt-2 text-[0.82rem] leading-[1.75] text-[#3f3f3f]">{item.description}</p>
+
+                        {item.result ? (
+                          <p className="experience-result mt-2.5 pl-3 text-[0.82rem] font-medium leading-[1.65] text-[#1f1f1f]">
+                            <span className="text-[#6f6f6f]">成果 · </span>{item.result}
+                          </p>
+                        ) : null}
+
+                        <div className="experience-relevance mt-3 rounded-lg p-3">
+                          <p className="text-[0.58rem] font-semibold tracking-[0.16em] uppercase" style={{ color: 'var(--accent-ink)' }}>
+                            与 OneCrew 的关联
+                          </p>
+                          <p className="mt-1.5 text-[0.78rem] leading-[1.7] text-[#2a2a2a]">{item.relevance}</p>
+                        </div>
                       </div>
                     </article>
                   ))}
                 </div>
               </section>
 
-              <section className="member-panel rounded-[2rem] p-6 sm:p-9">
-                <p className="text-xs font-medium tracking-[0.18em] text-[#6f6f6f] uppercase">What this adds to OneCrew</p>
-                <h2 className="font-display mt-4 text-4xl tracking-[-0.03em] sm:text-5xl">为这条航线补上的三块拼图</h2>
-                <ol className="mt-9 space-y-4">
+              {/* 5) CONTRIBUTION TO ONECREW */}
+              <section className="member-panel rounded-[1.75rem] p-5 sm:p-6">
+                <p className="accent-eyebrow text-[0.65rem] font-medium tracking-[0.18em] uppercase">
+                  Contribution to OneCrew · 对生产线的贡献
+                </p>
+                <h2 className="font-display mt-3 text-2xl leading-tight tracking-[-0.025em] sm:text-3xl">
+                  为这条航线补上的三块拼图
+                </h2>
+
+                <ol className="mt-5 grid gap-3 sm:grid-cols-3">
                   {member.contribution.map((item, index) => (
-                    <li key={item} className="grid gap-4 rounded-2xl border border-black/8 bg-white/30 p-5 sm:grid-cols-[2.5rem_1fr] sm:items-start">
-                      <span className="font-display text-2xl text-[#6f6f6f]">0{index + 1}</span>
-                      <p className="text-sm leading-7 text-[#484848] sm:text-base">{item}</p>
+                    <li
+                      key={item.title}
+                      className="contribution-card flex flex-col rounded-xl p-5"
+                    >
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-display contribution-index text-2xl tracking-[-0.02em]">
+                          0{index + 1}
+                        </span>
+                        <span className="h-px flex-1 accent-divider" />
+                      </div>
+                      <h3 className="contribution-title font-display mt-3 text-base leading-tight tracking-[-0.015em] sm:text-lg">
+                        {item.title}
+                      </h3>
+                      <p className="mt-2 text-[0.8rem] leading-[1.75] text-[#3f3f3f]">
+                        {item.description}
+                      </p>
                     </li>
                   ))}
                 </ol>
               </section>
 
-              <section className="member-links rounded-[2rem] bg-black p-7 text-white sm:p-9">
-                <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-end">
-                  <div>
-                    <p className="text-xs font-medium tracking-[0.18em] text-white/50 uppercase">Selected Links</p>
-                    <h2 className="font-display mt-4 text-4xl tracking-[-0.03em] sm:text-5xl">沿着作品，继续认识。</h2>
-                  </div>
-                  <div className="flex flex-wrap gap-3 sm:justify-end">
-                    {member.links.map((link) => (
-                      <a key={link.href} href={link.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-3 text-sm transition-colors hover:bg-white hover:text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
-                        {link.label}
-                        <ArrowUpRightIcon />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              </section>
             </div>
-          </section>
+          </div>
         </div>
       </main>
       <Footer />

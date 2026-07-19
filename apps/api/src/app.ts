@@ -14,6 +14,7 @@ import { registerProviderRoutes, type ProviderRouteOptions } from './provider-ro
 import { registerPublishRoutes, type PublishRouteOptions } from './publish-routes.js';
 import { registerQcRoutes, type QcRouteOptions } from './qc-routes.js';
 import { registerRenderRoutes, type RenderRouteOptions } from './render-routes.js';
+import { registerWorkbenchRoutes, type WorkbenchRouteOptions } from './workbench-routes.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -32,6 +33,7 @@ export interface CreateAppOptions {
   publishes?: PublishRouteOptions;
   qc?: QcRouteOptions;
   renders?: RenderRouteOptions;
+  workbench?: WorkbenchRouteOptions;
 }
 
 export interface ReadyResponse {
@@ -111,6 +113,7 @@ export function createApp(options: CreateAppOptions = {}): FastifyInstance {
   registerPublishRoutes(app, options.publishes);
   registerQcRoutes(app, options.qc);
   registerRenderRoutes(app, options.renders);
+  registerWorkbenchRoutes(app, options.workbench);
 
   app.addHook('onClose', async () => {
     await Promise.all(probes.map(async (probe) => probe.close?.()));

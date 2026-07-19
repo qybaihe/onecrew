@@ -1062,7 +1062,7 @@ const providerRequestBase = {
 export const llmProviderRequestSchema = z.object({
   ...providerRequestBase,
   capability: z.literal('llm'),
-  operation: z.enum(['script', 'translate', 'marketing_copy', 'regional_culture']),
+  operation: z.enum(['script', 'translate', 'marketing_copy', 'regional_culture', 'budget_allocation']),
   prompt: z.string().min(1).max(100_000),
   locale: localeSchema,
   imageUris: z.array(z.url()).max(20).default([]),
@@ -1365,6 +1365,179 @@ export const regionalCulturePackSchema = z.object({
   localizedBrief: z.string().min(1).max(20_000),
 });
 
+export const budgetAllocationMarketSchema = z.enum(['north_america', 'united_states', 'canada']);
+export const budgetDistributionModelSchema = z.enum([
+  'owned_app',
+  'licensed_platform',
+  'social_first',
+  'hybrid',
+]);
+export const budgetMonetizationModelSchema = z.enum([
+  'iap',
+  'subscription',
+  'ad_supported',
+  'hybrid',
+]);
+export const budgetRiskToleranceSchema = z.enum(['conservative', 'balanced', 'aggressive']);
+export const budgetEvidenceConfidenceSchema = z.enum(['high', 'medium', 'low']);
+
+export const budgetAllocationRequestSchema = z.object({
+  market: budgetAllocationMarketSchema.default('north_america'),
+  totalBudgetCny: z.number().int().min(10_000).max(1_000_000_000),
+  horizonWeeks: z.number().int().min(2).max(52).default(12),
+  distributionModel: budgetDistributionModelSchema.default('owned_app'),
+  monetizationModel: budgetMonetizationModelSchema.default('hybrid'),
+  riskTolerance: budgetRiskToleranceSchema.default('balanced'),
+  brief: z.string().min(1).max(20_000),
+  knownMetrics: z
+    .object({
+      cpiCny: z.number().positive().max(100_000).optional(),
+      day7RetentionPercent: z.number().min(0).max(100).optional(),
+      payerConversionPercent: z.number().min(0).max(100).optional(),
+      day30NetLtvCny: z.number().nonnegative().max(1_000_000).optional(),
+      paidRoas: z.number().nonnegative().max(100).optional(),
+    })
+    .optional(),
+  route: providerRouteSchema.default('primary'),
+  generationNonce: z.number().int().nonnegative(),
+});
+
+export const budgetAllocationCategorySchema = z.enum([
+  'market_validation',
+  'product_measurement',
+  'script_localization',
+  'ai_production',
+  'post_qc',
+  'creative_factory',
+  'paid_acquisition',
+  'creator_community',
+  'legal_compliance',
+  'contingency',
+]);
+
+export const budgetAllocationPhaseSchema = z.enum(['validate', 'prove', 'scale', 'reserve']);
+export const budgetAllocationChannelSchema = z.enum([
+  'meta',
+  'tiktok',
+  'google_app',
+  'apple_ads',
+  'creator_whitelisting',
+  'other_test',
+]);
+
+const budgetAmountSchema = z.number().int().nonnegative();
+const budgetPercentageSchema = z.number().min(0).max(100);
+
+export const budgetAllocationPlanSchema = z.object({
+  market: budgetAllocationMarketSchema,
+  marketLabel: z.string().min(1).max(200),
+  totalBudgetCny: budgetAmountSchema,
+  horizonWeeks: z.number().int().min(2).max(52),
+  evidenceAsOf: z.string().date(),
+  headline: z.string().min(1).max(500),
+  executiveSummary: z.string().min(1).max(4_000),
+  initialReleaseCny: budgetAmountSchema,
+  allocations: z
+    .array(
+      z.object({
+        category: budgetAllocationCategorySchema,
+        label: z.string().min(1).max(200),
+        amountCny: budgetAmountSchema,
+        percentage: budgetPercentageSchema,
+        rationale: z.string().min(1).max(2_000),
+        releaseGate: z.string().min(1).max(1_000),
+      }),
+    )
+    .min(6)
+    .max(12),
+  phases: z
+    .array(
+      z.object({
+        phase: budgetAllocationPhaseSchema,
+        label: z.string().min(1).max(200),
+        weeks: z.string().min(1).max(100),
+        amountCny: budgetAmountSchema,
+        percentage: budgetPercentageSchema,
+        objective: z.string().min(1).max(2_000),
+        exitCriteria: z.array(z.string().min(1).max(1_000)).min(1).max(8),
+      }),
+    )
+    .min(3)
+    .max(6),
+  paidMediaBudgetCny: budgetAmountSchema,
+  channels: z
+    .array(
+      z.object({
+        channel: budgetAllocationChannelSchema,
+        label: z.string().min(1).max(200),
+        amountCny: budgetAmountSchema,
+        shareOfPaidMediaPercent: budgetPercentageSchema,
+        role: z.string().min(1).max(1_000),
+        testDesign: z.string().min(1).max(2_000),
+        scaleRule: z.string().min(1).max(1_000),
+        stopRule: z.string().min(1).max(1_000),
+      }),
+    )
+    .min(2)
+    .max(8),
+  kpiGates: z
+    .array(
+      z.object({
+        metric: z.string().min(1).max(200),
+        definition: z.string().min(1).max(1_000),
+        target: z.string().min(1).max(1_000),
+        minimumSample: z.string().min(1).max(1_000),
+        actionIfMissed: z.string().min(1).max(1_000),
+      }),
+    )
+    .min(3)
+    .max(12),
+  onePersonCadence: z
+    .array(
+      z.object({
+        cadence: z.string().min(1).max(100),
+        automation: z.string().min(1).max(1_000),
+        humanDecision: z.string().min(1).max(1_000),
+        deliverable: z.string().min(1).max(500),
+      }),
+    )
+    .min(3)
+    .max(10),
+  assumptions: z
+    .array(
+      z.object({
+        claim: z.string().min(1).max(1_000),
+        basis: z.string().min(1).max(2_000),
+        confidence: budgetEvidenceConfidenceSchema,
+        invalidatedBy: z.string().min(1).max(1_000),
+      }),
+    )
+    .min(3)
+    .max(12),
+  risks: z
+    .array(
+      z.object({
+        risk: z.string().min(1).max(1_000),
+        earlySignal: z.string().min(1).max(1_000),
+        mitigation: z.string().min(1).max(1_000),
+      }),
+    )
+    .min(3)
+    .max(12),
+  sources: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(500),
+        url: z.url(),
+        evidenceType: z.enum(['official_platform', 'market_intelligence', 'planning_assumption']),
+        confidence: budgetEvidenceConfidenceSchema,
+        usedFor: z.string().min(1).max(1_000),
+      }),
+    )
+    .min(3)
+    .max(12),
+});
+
 export const creativeStoryPlanSchema = z.object({
   title: z.string().min(1).max(300),
   logline: z.string().min(1).max(2_000),
@@ -1471,6 +1644,8 @@ export const contractSchemas = {
   CreativeStoryPlanApplyResult: creativeStoryPlanApplyResultSchema,
   RegionalCulturePack: regionalCulturePackSchema,
   RegionalCulturePackRequest: regionalCulturePackRequestSchema,
+  BudgetAllocationRequest: budgetAllocationRequestSchema,
+  BudgetAllocationPlan: budgetAllocationPlanSchema,
 } as const;
 
 export type Locale = z.infer<typeof localeSchema>;
@@ -1540,6 +1715,15 @@ export type CreativeStoryPlanApplyResult = z.infer<typeof creativeStoryPlanApply
 export type RegionalCulturePackRegion = z.infer<typeof regionalCulturePackRegionSchema>;
 export type RegionalCulturePackRequest = z.infer<typeof regionalCulturePackRequestSchema>;
 export type RegionalCulturePack = z.infer<typeof regionalCulturePackSchema>;
+export type BudgetAllocationMarket = z.infer<typeof budgetAllocationMarketSchema>;
+export type BudgetDistributionModel = z.infer<typeof budgetDistributionModelSchema>;
+export type BudgetMonetizationModel = z.infer<typeof budgetMonetizationModelSchema>;
+export type BudgetRiskTolerance = z.infer<typeof budgetRiskToleranceSchema>;
+export type BudgetAllocationCategory = z.infer<typeof budgetAllocationCategorySchema>;
+export type BudgetAllocationPhase = z.infer<typeof budgetAllocationPhaseSchema>;
+export type BudgetAllocationChannel = z.infer<typeof budgetAllocationChannelSchema>;
+export type BudgetAllocationRequest = z.infer<typeof budgetAllocationRequestSchema>;
+export type BudgetAllocationPlan = z.infer<typeof budgetAllocationPlanSchema>;
 export type QCRecord = z.infer<typeof qcRecordSchema>;
 export type TechnicalQcExpectation = z.infer<typeof technicalQcExpectationSchema>;
 export type TechnicalQcReport = z.infer<typeof technicalQcReportSchema>;

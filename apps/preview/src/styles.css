@@ -1,5 +1,4 @@
 :root {
-  color-scheme: dark;
   --ink: oklch(0.965 0.018 89);
   --muted: oklch(0.72 0.035 235);
   --canvas: oklch(0.17 0.045 250);
@@ -10,14 +9,11 @@
   --amber: oklch(0.84 0.17 84);
   --danger: oklch(0.68 0.19 22);
   --radius: 1.1rem;
-  font-family: Inter, "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
-  background: var(--canvas);
-  color: var(--ink);
   font-synthesis: none;
 }
 
 * { box-sizing: border-box; }
-html { min-width: 320px; background: var(--canvas); }
+html { min-width: 320px; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, a { font: inherit; }
 button:focus-visible, a:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; }

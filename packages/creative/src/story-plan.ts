@@ -86,6 +86,7 @@ export function buildCreativeStoryPlanRequest(input: CreativeStoryPlanGeneration
     '你是 OneCrew 短剧总编剧与视觉设定师。请为现有项目追加新的剧集规划和可复用角色、场景、道具设定。',
     `必须输出 ${input.request.episodeCount} 集，严格遵循给定 JSON Schema，不要输出额外字段。`,
     '每集 scriptContent 必须是可继续拆分镜的完整中文剧本；所有 characterNames、sceneNames、propNames 必须精确引用输出设定或现有设定中的名称。',
+    '每集 scriptContent 要完整但精炼，控制在 800–1600 个汉字，不得用重复台词或过长场景描写凑篇幅。',
     '避免重复现有实体；若沿用现有角色、场景或道具，请使用完全相同的名称。角色 appearance 与 identityAnchors 要能稳定支持后续图像连续性。',
     `项目：${project.nameZh} / ${project.nameEn}`,
     `项目简介：${project.synopsis}`,
@@ -109,7 +110,7 @@ export function buildCreativeStoryPlanRequest(input: CreativeStoryPlanGeneration
     locale: 'zh-CN',
     imageUris: [],
     outputSchema: storyPlanOutputSchema(),
-    maxOutputTokens: Math.min(32_000, Math.max(4_000, input.request.episodeCount * 2_500)),
+    maxOutputTokens: Math.min(32_000, Math.max(8_000, input.request.episodeCount * 4_000)),
     route: input.request.route,
     generationNonce: input.request.generationNonce,
   };

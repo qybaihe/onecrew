@@ -1204,6 +1204,18 @@ export class JobRepository {
     return { value: jobRecordSchema.parse(row.record), version: row.version };
   }
 
+  async list(projectId?: string, limit = 200): Promise<Array<Versioned<JobRecord>>> {
+    const rows = projectId
+      ? await this.db
+          .select()
+          .from(jobs)
+          .where(eq(jobs.projectId, projectId))
+          .orderBy(desc(jobs.updatedAt))
+          .limit(limit)
+      : await this.db.select().from(jobs).orderBy(desc(jobs.updatedAt)).limit(limit);
+    return rows.map((row) => ({ value: jobRecordSchema.parse(row.record), version: row.version }));
+  }
+
   async getByIdempotency(projectId: string, idempotencyKey: string): Promise<Versioned<JobRecord> | undefined> {
     const [row] = await this.db
       .select()
@@ -1332,6 +1344,22 @@ export class CreativeGenerationBatchRepository {
       .limit(1);
     if (!row) return undefined;
     return { value: creativeGenerationBatchSchema.parse(row.record), version: row.version };
+  }
+
+  async listForProject(
+    projectId: string,
+    limit = 100,
+  ): Promise<Array<Versioned<CreativeGenerationBatch>>> {
+    const rows = await this.db
+      .select()
+      .from(creativeGenerationBatches)
+      .where(eq(creativeGenerationBatches.projectId, projectId))
+      .orderBy(desc(creativeGenerationBatches.updatedAt))
+      .limit(limit);
+    return rows.map((row) => ({
+      value: creativeGenerationBatchSchema.parse(row.record),
+      version: row.version,
+    }));
   }
 
   async replace(
@@ -1561,6 +1589,18 @@ export class QcRunRepository {
     return { value: qcRunRecordSchema.parse(row.record), version: row.version };
   }
 
+  async list(projectId?: string, limit = 200): Promise<Array<Versioned<QcRunRecord>>> {
+    const rows = projectId
+      ? await this.db
+          .select()
+          .from(qcRuns)
+          .where(eq(qcRuns.projectId, projectId))
+          .orderBy(desc(qcRuns.updatedAt))
+          .limit(limit)
+      : await this.db.select().from(qcRuns).orderBy(desc(qcRuns.updatedAt)).limit(limit);
+    return rows.map((row) => ({ value: qcRunRecordSchema.parse(row.record), version: row.version }));
+  }
+
   async getByIdempotency(
     projectId: string,
     idempotencyKey: string,
@@ -1660,6 +1700,21 @@ export class LocalizationRunRepository {
       .where(eq(localizationRuns.localizationRunId, localizationRunId));
     if (!row) throw new RecordNotFoundError('localization_run', localizationRunId);
     return { value: localizationRunRecordSchema.parse(row.record), version: row.version };
+  }
+
+  async list(projectId?: string, limit = 200): Promise<Array<Versioned<LocalizationRunRecord>>> {
+    const rows = projectId
+      ? await this.db
+          .select()
+          .from(localizationRuns)
+          .where(eq(localizationRuns.projectId, projectId))
+          .orderBy(desc(localizationRuns.updatedAt))
+          .limit(limit)
+      : await this.db.select().from(localizationRuns).orderBy(desc(localizationRuns.updatedAt)).limit(limit);
+    return rows.map((row) => ({
+      value: localizationRunRecordSchema.parse(row.record),
+      version: row.version,
+    }));
   }
 
   async getByIdempotency(
@@ -1801,6 +1856,18 @@ export class PublishRepository {
     return { value: publishRecordSchema.parse(row.record), version: row.version };
   }
 
+  async list(projectId?: string, limit = 200): Promise<Array<Versioned<PublishRecord>>> {
+    const rows = projectId
+      ? await this.db
+          .select()
+          .from(publishes)
+          .where(eq(publishes.projectId, projectId))
+          .orderBy(desc(publishes.updatedAt))
+          .limit(limit)
+      : await this.db.select().from(publishes).orderBy(desc(publishes.updatedAt)).limit(limit);
+    return rows.map((row) => ({ value: publishRecordSchema.parse(row.record), version: row.version }));
+  }
+
   async getByIdempotency(projectId: string, idempotencyKey: string): Promise<Versioned<PublishRecord> | undefined> {
     const [row] = await this.db
       .select()
@@ -1895,6 +1962,18 @@ export class RenderRepository {
     const [row] = await this.db.select().from(renders).where(eq(renders.renderId, renderId));
     if (!row) throw new RecordNotFoundError('render', renderId);
     return { value: renderRecordSchema.parse(row.record), version: row.version };
+  }
+
+  async list(projectId?: string, limit = 200): Promise<Array<Versioned<RenderRecord>>> {
+    const rows = projectId
+      ? await this.db
+          .select()
+          .from(renders)
+          .where(eq(renders.projectId, projectId))
+          .orderBy(desc(renders.updatedAt))
+          .limit(limit)
+      : await this.db.select().from(renders).orderBy(desc(renders.updatedAt)).limit(limit);
+    return rows.map((row) => ({ value: renderRecordSchema.parse(row.record), version: row.version }));
   }
 
   async findSucceeded(
@@ -2079,6 +2158,18 @@ export class HumanGateRepository {
     return humanGateSchema.parse(row.state);
   }
 
+  async list(projectId?: string, limit = 200): Promise<HumanGate[]> {
+    const rows = projectId
+      ? await this.db
+          .select()
+          .from(humanGates)
+          .where(eq(humanGates.projectId, projectId))
+          .orderBy(desc(humanGates.createdAt))
+          .limit(limit)
+      : await this.db.select().from(humanGates).orderBy(desc(humanGates.createdAt)).limit(limit);
+    return rows.map((row) => humanGateSchema.parse(row.state));
+  }
+
   async findWaiting(
     projectId: string,
     targetType: HumanGate['targetType'],
@@ -2182,6 +2273,10 @@ export interface AuditLogInput {
   expectedVersion?: number;
 }
 
+export interface AuditLogEntry extends AuditLogInput {
+  createdAt: string;
+}
+
 export class AuditRepository {
   constructor(private readonly db: OneCrewDatabase) {}
 
@@ -2190,6 +2285,31 @@ export class AuditRepository {
       .insert(auditLogs)
       .values(input)
       .onConflictDoNothing();
+  }
+
+  async list(projectId?: string, limit = 200): Promise<AuditLogEntry[]> {
+    const rows = projectId
+      ? await this.db
+          .select()
+          .from(auditLogs)
+          .where(eq(auditLogs.projectId, projectId))
+          .orderBy(desc(auditLogs.createdAt))
+          .limit(limit)
+      : await this.db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
+    return rows.map((row) => ({
+      auditId: row.auditId,
+      source: row.source as AuditLogInput['source'],
+      eventId: row.eventId,
+      action: row.action,
+      outcome: row.outcome,
+      details: row.details,
+      createdAt: row.createdAt.toISOString(),
+      ...(row.projectId ? { projectId: row.projectId } : {}),
+      ...(row.actorOpenId ? { actorOpenId: row.actorOpenId } : {}),
+      ...(row.targetType ? { targetType: row.targetType } : {}),
+      ...(row.targetId ? { targetId: row.targetId } : {}),
+      ...(row.expectedVersion === null ? {} : { expectedVersion: row.expectedVersion }),
+    }));
   }
 }
 
