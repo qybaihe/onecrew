@@ -10,12 +10,14 @@ import {
   type CreativeStoryPlanRequest,
   type EpisodeSpec,
   type LlmProviderRequest,
+  type RegionalCulturePack,
 } from '@onecrew/contracts';
 import { z } from 'zod';
 
 export interface CreativeStoryPlanGenerationInput {
   bundle: CreativeProjectBundle;
   request: CreativeStoryPlanRequest;
+  culturePack?: RegionalCulturePack | undefined;
 }
 
 export interface CreativeStoryPlanMaterializationInput {
@@ -63,6 +65,23 @@ export function buildCreativeStoryPlanRequest(input: CreativeStoryPlanGeneration
     name: entity.name,
     description: entity.description ?? '',
   }));
+  const culturePack = input.culturePack;
+  const cultureSection = culturePack
+    ? [
+        `目标出海地区：${culturePack.regionLabel}`,
+        `地区受众画像：${culturePack.audienceProfile}`,
+        `偏好题材：${culturePack.themes.join('、')}`,
+        `核心精神面貌：${culturePack.spiritValues.join('、')}`,
+        `禁忌规避：${culturePack.taboos.length > 0 ? culturePack.taboos.join('、') : '无'}`,
+        `钩子结构：${culturePack.hookStructures.join('、')}`,
+        `视觉符号：${culturePack.visualMotifs.join('、')}`,
+        `参考案例：${culturePack.referenceCases.map((c) => `${c.title}——${c.whyItWorks}`).join('；')}`,
+        '请严格按照以上地域文化包创作剧本、角色与场景，确保题材、精神面貌、视觉符号与参考案例一致，避免触碰禁忌。',
+      ].join('\n')
+    : undefined;
+  const briefLine = culturePack
+    ? `本次创作要求（已按地域文化包本土化）：${culturePack.localizedBrief}`
+    : `本次创作要求：${input.request.brief}`;
   const prompt = [
     '你是 OneCrew 短剧总编剧与视觉设定师。请为现有项目追加新的剧集规划和可复用角色、场景、道具设定。',
     `必须输出 ${input.request.episodeCount} 集，严格遵循给定 JSON Schema，不要输出额外字段。`,
@@ -73,7 +92,8 @@ export function buildCreativeStoryPlanRequest(input: CreativeStoryPlanGeneration
     `受众：${project.audience}`,
     `类型：${project.genres.join('、')}`,
     project.style ? `风格：${project.style}` : '',
-    `本次创作要求：${input.request.brief}`,
+    cultureSection,
+    briefLine,
     `现有剧集：${JSON.stringify(existingEpisodes)}`,
     `现有设定：${JSON.stringify(existingEntities)}`,
   ]

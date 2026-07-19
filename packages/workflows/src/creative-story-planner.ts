@@ -7,11 +7,13 @@ import {
   creativeStoryPlanRequestSchema,
   creativeStoryPlanSchema,
   llmProviderOutputSchema,
+  regionalCulturePackSchema,
   type AsyncJobAccepted,
   type CreativeStoryPlan,
   type CreativeStoryPlanApplyResult,
   type CreativeStoryPlanRequest,
   type JobRecord,
+  type RegionalCulturePack,
 } from '@onecrew/contracts';
 import type { CreativeRepository } from '@onecrew/db';
 
@@ -49,7 +51,41 @@ export class CreativeStoryPlanner {
   ): Promise<AsyncJobAccepted> {
     const request = creativeStoryPlanRequestSchema.parse(input);
     const bundle = await this.repository.getBundle(projectId);
-    return this.provider.submit(buildCreativeStoryPlanRequest({ bundle, request }), idempotencyKey);
+    const culturePack = request.regionalCulturePackJobId
+      ? await this.loadRegionalCulturePack(projectId, request.regionalCulturePackJobId)
+      : undefined;
+    return this.provider.submit(
+      buildCreativeStoryPlanRequest({ bundle, request, culturePack }),
+      idempotencyKey,
+    );
+  }
+
+  private async loadRegionalCulturePack(
+    projectId: string,
+    jobId: string,
+  ): Promise<RegionalCulturePack> {
+    const current = await this.provider.get(jobId);
+    if (current.job.value.projectId !== projectId || current.run.request.capability !== 'llm') {
+      throw new CreativeStoryPlanOutputError(
+        `Job ${jobId} is not a regional culture pack for project ${projectId}`,
+      );
+    }
+    if (current.run.request.outputSchema?.title !== 'OneCrewRegionalCulturePack') {
+      throw new CreativeStoryPlanOutputError(
+        `Job ${jobId} does not use the regional culture pack contract`,
+      );
+    }
+    if (current.job.value.status !== 'succeeded') {
+      throw new CreativeStoryPlanNotReadyError(jobId, current.job.value.status);
+    }
+    if (current.output === undefined) {
+      throw new CreativeStoryPlanOutputError(`Regional culture pack output is missing for Job ${jobId}`);
+    }
+    const output = llmProviderOutputSchema.parse(current.output);
+    if (!output.structured) {
+      throw new CreativeStoryPlanOutputError(`Regional culture pack Job ${jobId} has no structured output`);
+    }
+    return regionalCulturePackSchema.parse(output.structured);
   }
 
   async preview(projectId: string, jobId: string): Promise<CreativeStoryPlanPreview> {
